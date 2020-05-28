@@ -41,6 +41,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 #include "url_utility.h"
 
@@ -226,6 +227,7 @@ string SignedURL(const string& accessKey, const string& secretKey,
 //------------------------------------------------------------------------------
 // Sign HTTP headers: return dictionary with {key, value} pairs containing
 // per-header information.
+// TODO: replace argumentd with structure.
 map<string, string> SignHeaders(const string& accessKey,
                                 const string& secretKey, const string& endpoint,
                                 const string& method, const string& bucketName,
@@ -233,6 +235,12 @@ map<string, string> SignHeaders(const string& accessKey,
                                 const map<string, string>& parameters,
                                 const map<string, string>& additionalHeaders,
                                 const string& region, const string& service) {
+    //do not want to waste time converting to lowercase
+    for(auto kv: additionalHeaders) {
+        if(kv.first != ToLower(kv.first)) {
+            throw invalid_argument("Header keys must be lowecase");
+        }
+    }
     if (payloadHash.empty()) {
         payloadHash = "UNSIGNED-PAYLOAD";
     }
@@ -255,15 +263,15 @@ map<string, string> SignHeaders(const string& accessKey,
     const string canonicalQueryString = reqParameters;
 
     const map<string, string> defaultHeaders = {
-        {"Host", host},
-        {"X-Amz-Content-SHA256", payloadHash},
-        {"X-Amz-Date", t.timeStamp}};
+        {"host", host},
+        {"x-amz-content-sha256", payloadHash},
+        {"z-amz-date", t.timeStamp}};
 
     map<string, string> allHeaders = defaultHeaders;
     map<string, string> xAmzHeaders;
     for (auto kv : additionalHeaders) {
-        if (ToLower(kv.first).find("x-amz-") == 0 ||
-            ToLower(kv.first).find("content-length") == 0) {
+        if (kv.first.find("x-amz-") == 0 ||
+            kv.first.find("content-length") == 0) {
             xAmzHeaders.insert(kv);
         }
     }
@@ -277,13 +285,12 @@ map<string, string> SignHeaders(const string& accessKey,
     signedHeaders.insert(begin(xAmzHeaders), end(xAmzHeaders));
     set<string> sortedSignedHeadersKeys;
     for (auto kv : signedHeaders) {
-        sortedSignedHeadersKeys.insert(ToLower(kv.first));
+        sortedSignedHeadersKeys.insert(kv.first);
     }
     
-
     ostringstream os;
     for (auto k : sortedAllHeadersKeys) {
-        os << ToLower(k) << ":" << allHeaders[k] << '\n';
+        os << k << ":" << allHeaders[k] << '\n';
     }
     const string canonicalHeadersStr = os.str();
     os.str("");
@@ -291,7 +298,9 @@ map<string, string> SignHeaders(const string& accessKey,
     for (auto k : sortedSignedHeadersKeys) {
         os << k << ';';
     }
-    const string signedHeadersStr = os.str();
+    string signedHeadersStr = os.str();
+    //remove last ';'
+    signedHeadersStr = signedHeadersStr.substr(0, signedHeadersStr.size() - 1);
 
     // canonical request
     const string canonicalRequest = ToUpper(method) + '\n' + canonicalURI +

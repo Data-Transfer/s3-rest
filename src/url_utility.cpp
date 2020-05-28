@@ -135,6 +135,10 @@ map<string, string> ParseParams(string s) {
 
 //------------------------------------------------------------------------------
 // From "key1:value1;key2:value2 {key, value} dictionary
+// Per https://www.w3.org/Protocols/rfc2616/rfc2616.html
+// HTTP headers are not case-sensitive and therefore it's better to translate
+// all of them to lower-case to avoid problems when they are places is
+// lexicographic order as part of the S3v4 signing process.
 map<string, string> ParseHeaders(const string& s) {
     if (s.empty()) return map<string, string>();
     vector<string> slist;
@@ -146,7 +150,7 @@ map<string, string> ParseHeaders(const string& s) {
         assert(kv.size() == 1 || kv.size() == 2);
         const string key = kv[0];
         const string value = kv.size() == 2 ? kv[1] : "";
-        params.insert({key, value});
+        params.insert({ToLower(key), value});
     }
     return params;
 }
