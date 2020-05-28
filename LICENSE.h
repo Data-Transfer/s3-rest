@@ -29,17 +29,3 @@
 * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
-// Public interface to signing URLs and HTTP headers with the S3v4 protocol
-// standard.
-#pragma once
-#include <map>
-#include <string>
-
-std::string SignedURL(const std::string& accessKey,
-                      const std::string& secretKey, int expiration,
-                      const std::string& endpoint, const std::string& method,
-                      const std::string& bucketName = "",
-                      const std::string& keyName = "",
-                      const std::map<std::string, std::string>& params =
-                          std::map<std::string, std::string>(),
-                      const std::string& region = "us-east-1");
