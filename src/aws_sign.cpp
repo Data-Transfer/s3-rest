@@ -265,7 +265,7 @@ map<string, string> SignHeaders(const string& accessKey,
     const map<string, string> defaultHeaders = {
         {"host", host},
         {"x-amz-content-sha256", payloadHash},
-        {"z-amz-date", t.timeStamp}};
+        {"x-amz-date", t.timeStamp}};
 
     map<string, string> allHeaders = defaultHeaders;
     map<string, string> xAmzHeaders;

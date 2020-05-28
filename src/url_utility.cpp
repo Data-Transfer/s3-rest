@@ -51,13 +51,14 @@ URL ParseURL(const string& s) {
     // section start and end with a word and requiring a '.' character
     // separating the individual words.
     regex e("\\s*(\\w+)://([a-zA-Z-_\\.]+)(:(\\d+))?");
-    regex_search(s, m, e, regex_constants::match_any);
-    if (m.size() == 3) {
-        return {80, m[2], m[1]};
-    } else if (m.size() == 5) {
+    if(!regex_search(s, m, e, regex_constants::match_any)){
+        return {};
+    }
+    if(m[4].str().empty()) {
+        return {-1, m[2], m[1]};
+    } else {
         return {stoi(m[4]), m[2], m[1]};
     }
-    return {};
 }
 
 //------------------------------------------------------------------------------
