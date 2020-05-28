@@ -1,34 +1,35 @@
 /*******************************************************************************
-* BSD 3-Clause License
-* 
-* Copyright (c) 2020, Ugo Varetto
-* All rights reserved.
-* 
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-* 
-* 1. Redistributions of source code must retain the above copyright notice, this
-*    list of conditions and the following disclaimer.
-* 
-* 2. Redistributions in binary form must reproduce the above copyright notice,
-*    this list of conditions and the following disclaimer in the documentation
-*    and/or other materials provided with the distribution.
-* 
-* 3. Neither the name of the copyright holder nor the names of its
-*    contributors may be used to endorse or promote products derived from
-*    this software without specific prior written permission.
-* 
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-* AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-* SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-* CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-* OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*******************************************************************************/
+ * BSD 3-Clause License
+ *
+ * Copyright (c) 2020, Ugo Varetto
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from
+ *    this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ *ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ *LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ *CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ *SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ *INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ *CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *POSSIBILITY OF SUCH DAMAGE.
+ *******************************************************************************/
 // Functions to sign S3 URL and HTTP headers
 #include <hmac.h>
 #include <sha256.h>
@@ -36,6 +37,7 @@
 #include <ctime>
 #include <iomanip>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -219,4 +221,107 @@ string SignedURL(const string& accessKey, const string& secretKey,
         "?" + canonicalQueryStringUrlEncoded + "&X-Amz-Signature=" + signature;
 
     return requestUrl;
+}
+
+//------------------------------------------------------------------------------
+// Sign HTTP headers: return dictionary with {key, value} pairs containing
+// per-header information.
+string SignHeaders(const string& accessKey, const string& secretKey,
+                   const string& endpoint, const string& method,
+                   const string& bucketName, const string& keyName,
+                   string payloadHash, const map<string, string>& parameters,
+                   const map<string, string>& additionalHeaders,
+                   const string& region, const string& service) {
+    if (payloadHash.empty()) {
+        payloadHash = "UNSIGNED-PAYLOAD";
+    }
+    const URL url = ParseURL(endpoint);
+    const string host =
+        url.port <= 0 ? url.host : url.host + ":" + to_string(url.port);
+    Time t = GetDates();
+    const string reqParameters =
+        parameters.empty() ? "" : UrlEncode(parameters);
+
+    string canonicalURI = "/";
+
+    if (!bucketName.empty()) {
+        canonicalURI += bucketName;
+        if (!keyName.empty()) {
+            canonicalURI += "/" + keyName;
+        }
+    }
+
+    const string canonicalQueryString = reqParameters;
+
+    const map<string, string> defaultHeaders = {
+        {"Host", host},
+        {"X-Amz-Content-SHA}256", payloadHash},
+        {"X-Amz-Date", t.timeStamp}};
+
+    map<string, string> allHeaders = defaultHeaders;
+    map<string, string> xAmzHeaders;
+    for (auto kv : additionalHeaders) {
+        if (ToLower(kv.first).find("x-amz-") == 0 ||
+            ToLower(kv.first).find("content-length") == 0) {
+            xAmzHeaders.insert(kv);
+        }
+    }
+    allHeaders.insert(begin(additionalHeaders), end(additionalHeaders));
+    set<string> sortedAllHeadersKeys;
+    if (allHeaders.size() > defaultHeaders.size()) {
+        for (auto kv : allHeaders) {
+            sortedAllHeadersKeys.insert(kv.first);
+        }
+    }
+    map<string, string> signedHeaders = defaultHeaders;
+    signedHeaders.insert(begin(xAmzHeaders), end(xAmzHeaders));
+    set<string> sortedSignedHeadersKeys;
+    if (allHeaders.size() > defaultHeaders.size()) {
+        for (auto kv : signedHeaders) {
+            sortedSignedHeadersKeys.insert(ToLower(kv.first));
+        }
+    }
+
+    ostringstream os;
+    for (auto k : sortedAllHeadersKeys) {
+        os << ToLower(k) << ":" << allHeaders[k] << '\n';
+    }
+    const string canonicalHeadersStr = os.str();
+    os.str("");
+
+    for (auto k : sortedSignedHeadersKeys) {
+        os << k << ';';
+    }
+    const string signedHeadersStr = os.str();
+
+    // canonical request
+    const string canonicalRequest = ToUpper(method) + '\n' + canonicalURI +
+                                    '\n' + canonicalQueryString + '\n' +
+                                    canonicalHeadersStr + '\n' +
+                                    signedHeadersStr + '\n' + payloadHash;
+
+    const string algorithm = "AWS4-HMAC-SHA256";
+    const string credentialScope =
+        t.dateStamp + '/' + region + '/' + service + '/' + "aws4_request";
+
+    SHA256 sha256;
+    const string stringToSign =
+        algorithm + '\n' +
+        t.timeStamp + '\n' +
+        credentialScope + '\n' +
+        sha256(canonicalRequest);
+
+    // generate the signature
+    const Bytes signatureKey =
+        CreateSignatureKey(secretKey, t.dateStamp, region, service);
+
+    const string signature = Hex(hmacb<SHA256>(
+        Bytes(begin(stringToSign), end(stringToSign)), signatureKey));
+
+    // build authorisaton header
+    const string authorizationHeader =
+        algorithm + ' ' + string("Credential=") +
+        accessKey + '/' +
+        credentialScope + ", "  + string("SignedHeaders=") +
+        signedHeadersStr + ", " + string("Signature=") + signature;
 }

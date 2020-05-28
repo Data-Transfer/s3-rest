@@ -8,6 +8,7 @@ Originally developed to test connectivity to Ceph object storage.
 
 This software is distributed under the BSD three-clause license and has
 dependencies on the following software libraries:
+
 * Lyra, by Rene Rivera - distributed under the Boost license version 1.0
 * Portable Hashing Library, by Stephan Brumme - distributed under the
   zlib license
