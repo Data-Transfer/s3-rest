@@ -49,7 +49,8 @@ struct Args {
     string key;
     string params;
     string method;
-    int expiration = 3600;
+    string headers;
+    string payloadHash; //use sha256sum to compute from stdin or file
 };
 
 //------------------------------------------------------------------------------
@@ -60,8 +61,8 @@ void PrintArgs(const Args& args) {
          << "method:       " << ToUpper(args.method) << endl
          << "bucket:       " << args.bucket << endl
          << "key:          " << args.key << endl
-         << "expiration:   " << args.expiration << endl
-         << "parameters:   " << args.params << endl;
+         << "parameters:   " << args.params << endl
+         << "headers:      " << args.headers << endl;
 }
 
 //------------------------------------------------------------------------------
@@ -87,10 +88,9 @@ int main(int argc, char const* argv[]) {
             "URL request parameters. key1=value1;key2=...")
             .optional() |
         lyra::opt(args.bucket, "bucket")["-b"]["--bucket"]("Bucket name") |
-        lyra::opt(args.expiration, "expiration")["-t"]["--expiration"](
-            "expiration time in seconds")
-            .optional() |
-        lyra::opt(args.key, "key")["-k"]["--key"]("Key name").optional();
+        lyra::opt(args.key, "key")["-k"]["--key"]("Key name").optional() |
+        lyra::opt(args.headers, "headers")["-H"]["--headers"](
+            "Headers: header1:value1;header2:value2;...").optional();
 
     // Parse the program arguments:
     auto result = cli.parse({argc, argv});
@@ -103,11 +103,14 @@ int main(int argc, char const* argv[]) {
         cout << cli;
         return 0;
     }
-    //PrintArgs(args);
+    // PrintArgs(args);
     const map<string, string> params = ParseParams(args.params); 
-    const string signedURL =
-        SignedURL(args.awsAccessKey, args.awsSecretKey, args.expiration,
-                  args.endpoint, ToUpper(args.method), args.bucket, args.key);
-    cout << signedURL;
+    const map<string, string> headers = ParseHeaders(args.headers);
+    const map<string, string> signedHeaders = SignHeaders(
+        args.awsAccessKey, args.awsSecretKey, args.endpoint, args.method,
+        args.bucket, args.key, args.payloadHash, params, headers);
+    for(auto kv: signedHeaders) {
+        cout << kv.first << ": " << kv.second << endl;
+    }
     return 0;
 }

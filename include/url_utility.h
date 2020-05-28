@@ -89,3 +89,5 @@ std::string ToUpper(std::string s);
 std::string ToLower(std::string s);
 
 std::map<std::string, std::string> ParseParams(std::string s);
+
+std::map<std::string, std::string> ParseHeaders(const std::string& s);

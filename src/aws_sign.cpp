@@ -226,12 +226,13 @@ string SignedURL(const string& accessKey, const string& secretKey,
 //------------------------------------------------------------------------------
 // Sign HTTP headers: return dictionary with {key, value} pairs containing
 // per-header information.
-string SignHeaders(const string& accessKey, const string& secretKey,
-                   const string& endpoint, const string& method,
-                   const string& bucketName, const string& keyName,
-                   string payloadHash, const map<string, string>& parameters,
-                   const map<string, string>& additionalHeaders,
-                   const string& region, const string& service) {
+map<string, string> SignHeaders(const string& accessKey,
+                                const string& secretKey, const string& endpoint,
+                                const string& method, const string& bucketName,
+                                const string& keyName, string payloadHash,
+                                const map<string, string>& parameters,
+                                const map<string, string>& additionalHeaders,
+                                const string& region, const string& service) {
     if (payloadHash.empty()) {
         payloadHash = "UNSIGNED-PAYLOAD";
     }
@@ -255,7 +256,7 @@ string SignHeaders(const string& accessKey, const string& secretKey,
 
     const map<string, string> defaultHeaders = {
         {"Host", host},
-        {"X-Amz-Content-SHA}256", payloadHash},
+        {"X-Amz-Content-SHA256", payloadHash},
         {"X-Amz-Date", t.timeStamp}};
 
     map<string, string> allHeaders = defaultHeaders;
@@ -268,19 +269,17 @@ string SignHeaders(const string& accessKey, const string& secretKey,
     }
     allHeaders.insert(begin(additionalHeaders), end(additionalHeaders));
     set<string> sortedAllHeadersKeys;
-    if (allHeaders.size() > defaultHeaders.size()) {
-        for (auto kv : allHeaders) {
-            sortedAllHeadersKeys.insert(kv.first);
-        }
+    for (auto kv : allHeaders) {
+        sortedAllHeadersKeys.insert(kv.first);
     }
+    
     map<string, string> signedHeaders = defaultHeaders;
     signedHeaders.insert(begin(xAmzHeaders), end(xAmzHeaders));
     set<string> sortedSignedHeadersKeys;
-    if (allHeaders.size() > defaultHeaders.size()) {
-        for (auto kv : signedHeaders) {
-            sortedSignedHeadersKeys.insert(ToLower(kv.first));
-        }
+    for (auto kv : signedHeaders) {
+        sortedSignedHeadersKeys.insert(ToLower(kv.first));
     }
+    
 
     ostringstream os;
     for (auto k : sortedAllHeadersKeys) {
@@ -305,11 +304,9 @@ string SignHeaders(const string& accessKey, const string& secretKey,
         t.dateStamp + '/' + region + '/' + service + '/' + "aws4_request";
 
     SHA256 sha256;
-    const string stringToSign =
-        algorithm + '\n' +
-        t.timeStamp + '\n' +
-        credentialScope + '\n' +
-        sha256(canonicalRequest);
+    const string stringToSign = algorithm + '\n' + t.timeStamp + '\n' +
+                                credentialScope + '\n' +
+                                sha256(canonicalRequest);
 
     // generate the signature
     const Bytes signatureKey =
@@ -320,8 +317,10 @@ string SignHeaders(const string& accessKey, const string& secretKey,
 
     // build authorisaton header
     const string authorizationHeader =
-        algorithm + ' ' + string("Credential=") +
-        accessKey + '/' +
-        credentialScope + ", "  + string("SignedHeaders=") +
-        signedHeadersStr + ", " + string("Signature=") + signature;
+        algorithm + ' ' + string("Credential=") + accessKey + '/' +
+        credentialScope + ", " + string("SignedHeaders=") + signedHeadersStr +
+        ", " + string("Signature=") + signature;
+
+    allHeaders.insert({"Authorization", authorizationHeader});
+    return allHeaders;
 }

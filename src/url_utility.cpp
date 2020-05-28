@@ -40,6 +40,7 @@
 #include <utility>
 #include <vector>
 #include "url_utility.h"
+#include <iostream>
 using namespace std;
 
 //------------------------------------------------------------------------------
@@ -49,7 +50,7 @@ URL ParseURL(const string& s) {
     // minimal version of a URL parser: no enforcement of having the host
     // section start and end with a word and requiring a '.' character
     // separating the individual words.
-    regex e("\\s*(\\w+)://([a-zA-Z-_\\.])(:(\\d+))?");
+    regex e("\\s*(\\w+)://([a-zA-Z-_\\.]+)(:(\\d+))?");
     regex_search(s, m, e, regex_constants::match_any);
     if (m.size() == 3) {
         return {80, m[2], m[1]};
@@ -111,6 +112,8 @@ string ToLower(string s) {
     return s;
 }
 
+//TODO: create StringToDict(const string&, const string& delims) funciton to be
+//invoked from both ParseXXX functions.
 //------------------------------------------------------------------------------
 // From "key1=value1;key2=value2;key3=;key4" to {key, value} dictionary
 map<string, string> ParseParams(string s) {
@@ -122,6 +125,24 @@ map<string, string> ParseParams(string s) {
     for (auto p : slist) {
         vector<string> kv;
         split(p, kv, "=", 1);
+        assert(kv.size() == 1 || kv.size() == 2);
+        const string key = kv[0];
+        const string value = kv.size() == 2 ? kv[1] : "";
+        params.insert({key, value});
+    }
+    return params;
+}
+
+//------------------------------------------------------------------------------
+// From "key1:value1;key2:value2 {key, value} dictionary
+map<string, string> ParseHeaders(const string& s) {
+    if (s.empty()) return map<string, string>();
+    vector<string> slist;
+    split(s, slist, ";");
+    map<string, string> params;
+    for (auto p : slist) {
+        vector<string> kv;
+        split(p, kv, ":", 1);
         assert(kv.size() == 1 || kv.size() == 2);
         const string key = kv[0];
         const string value = kv.size() == 2 ? kv[1] : "";
