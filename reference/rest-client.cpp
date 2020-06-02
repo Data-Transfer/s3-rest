@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "url_utility.h"
+
 using namespace std;
 
 //TODO: change configuration when method changes, add option to specify
@@ -17,7 +19,7 @@ using namespace std;
 class WebRequest {
    public:
     WebRequest() { InitEnv(); }
-    WebRequest(const string& url) : WebRequest(), url_(url), method_("GET") {
+    WebRequest(const string& url) : url_(url), method_("GET") {
         InitEnv();
     }
     WebRequest(const string& ep, const string& path,
@@ -55,9 +57,15 @@ class WebRequest {
 
    private:
     void InitEnv() {
-        const bool prev = globalInit_.exchange(true);
-        if (!prev) {
-            curl_global_init(CURL_GLOBAL_DEFAULT);
+        const InitState prev = globalInit_.exchange(INITIALIZING);
+        if (prev == UNINITIALIZED) {
+            if(curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+                
+            }   
+            globalInit_.store(INITIALIZED);
+        } else {
+            //C++ 20: can use wait, busy loop instead
+            while(globalInit_.load() != INITIALIZED);
         }
         Init();
         if (!url_.empty())
@@ -113,10 +121,11 @@ class WebRequest {
     string method_;               // GET | POST | PUT | HEAD | DELETE
 
    private:
-    static atomic<bool> globalInit_;
+    enum InitState {UNINITIALIZED=2, INITIALIZING=1, INITIALIZED=0};
+    static atomic<InitState> globalInit_;
 };
 
-atomic<bool> WebRequest::globalInit_(false);
+atomic<WebRequest::InitState> WebRequest::globalInit_(UNINITIALIZED);
 
 int main(int argc, char const* argv[]) {
     WebRequest req("https://www.pawsey.org.au");

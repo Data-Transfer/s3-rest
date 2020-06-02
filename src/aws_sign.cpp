@@ -44,7 +44,7 @@
 #include <stdexcept>
 
 #include "url_utility.h"
-
+#include <iostream>
 using namespace std;
 
 //------------------------------------------------------------------------------
@@ -316,7 +316,6 @@ map<string, string> SignHeaders(const string& accessKey,
     const string stringToSign = algorithm + '\n' + t.timeStamp + '\n' +
                                 credentialScope + '\n' +
                                 sha256(canonicalRequest);
-
     // generate the signature
     const Bytes signatureKey =
         CreateSignatureKey(secretKey, t.dateStamp, region, service);
