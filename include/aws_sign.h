@@ -44,7 +44,8 @@ std::string SignedURL(const std::string& accessKey,
                       const std::map<std::string, std::string>& params =
                           std::map<std::string, std::string>(),
                       const std::string& region = "us-east-1");
-
+                      
+//TODO: use struct to initialize
 std::map<std::string, std::string> SignHeaders(
     const std::string& accessKey, const std::string& secretKey,
     const std::string& endpoint, const std::string& method,

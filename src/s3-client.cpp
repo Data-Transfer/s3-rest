@@ -1,61 +1,104 @@
 //!!!!!!!! IN PROGRESS DO NOT TOUCH
 
 /*******************************************************************************
-* BSD 3-Clause License
-* 
-* Copyright (c) 2020, Ugo Varetto
-* All rights reserved.
-* 
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-* 
-* 1. Redistributions of source code must retain the above copyright notice, this
-*    list of conditions and the following disclaimer.
-* 
-* 2. Redistributions in binary form must reproduce the above copyright notice,
-*    this list of conditions and the following disclaimer in the documentation
-*    and/or other materials provided with the distribution.
-* 
-* 3. Neither the name of the copyright holder nor the names of its
-*    contributors may be used to endorse or promote products derived from
-*    this software without specific prior written permission.
-* 
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-* AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-* SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-* CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-* OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*******************************************************************************/
+ * BSD 3-Clause License
+ *
+ * Copyright (c) 2020, Ugo Varetto
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from
+ *    this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ *ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ *LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ *CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ *SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ *INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ *CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *POSSIBILITY OF SUCH DAMAGE.
+ *******************************************************************************/
 
-//Send S3v4 signed REST requests: to be finished then split into separate files
+// Send S3v4 signed REST requests: to be finished then split into separate files
 // DO NOT TOUCH
 
 #include <aws_sign.h>
 #include <curl/curl.h>
 #include <curl/easy.h>
+#include <sys/stat.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <fstream>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 
+#include "lyra/lyra.hpp"
 #include "url_utility.h"
 
 using namespace std;
+
+// Issues with curl_global_cleanup: cannot be used safely in a multithreaded
+// application, mentioning calls to "other libraries" without listing which.
+// Quoting:
+// This function releases resources acquired by curl_global_init.
+// You should call curl_global_cleanup once for each call you make
+// to curl_global_init, after you are done using libcurl.
+// This function is not thread safe. You must not call it when any
+// other thread in the program (i.e. a thread sharing the same memory)
+// is running. This doesn't just mean no other thread that is using libcurl.
+// Because curl_global_cleanup calls functions of other libraries that are
+// similarly thread unsafe, it could conflict with any other thread that
+// uses these other libraries.
+// See the description in libcurl of global environment requirements for
+// details of how to use this function.
 
 // TODO: change configuration when method changes, add option to specify
 // read/write callbacks, write UrlEncode(map) using curl's url encode function
 // curl_easy_escape(curl, "data to convert", 15);
 class WebRequest {
+    using WriteFunction = size_t (*)(char* data, size_t size, size_t nmemb,
+                                     void* writerData);
+    using ReadFunction = size_t (*)(void* ptr, size_t size, size_t nmemb,
+                                    void* userdata);
+
+    struct Buffer {
+        size_t offset = 0;
+        vector<uint8_t> data;
+    };
+
    public:
+    WebRequest(const WebRequest&) = delete;
+    WebRequest(WebRequest&& other)
+        : endpoint_(other.endpoint_),
+          path_(other.path_),
+          method_(other.method_),
+          params_(other.params_),
+          headers_(other.headers_),
+          writeBuffer_(other.writeBuffer_),
+          headerBuffer_(other.headerBuffer_),
+          curl_(other.curl_) {
+        other.curl_ = NULL;
+    }
     WebRequest() { InitEnv(); }
     WebRequest(const string& url) : url_(url), method_("GET") { InitEnv(); }
     WebRequest(const string& ep, const string& path,
@@ -73,14 +116,20 @@ class WebRequest {
         if (curlHeaderList_) {
             curl_slist_free_all(curlHeaderList_);
         }
-        curl_easy_cleanup(curl_);
-        //need to call global_cleanup: re-implement thread safe code
-        //like done for init
+        if (curl_) {  // current object could have been moved
+            // libcurl init and cleanup functions ar NOT thread safe and the
+            // behaviour is unpredictable in case of use in a multithreaded
+            // environment, this just guarantees that there is only a single
+            // call to curl_global_cleanup
+            curl_easy_cleanup(curl_);
+            const std::lock_guard<std::mutex> lock(cleanupMutex_);
+            curl_global_cleanup();
+        }
     }
     bool Send() {
         const bool ok = curl_easy_perform(curl_) == CURLE_OK;
         if (ok) {
-            curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, responseCode_);
+            curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &responseCode_);
         } else {
             responseCode_ = 0;
         }
@@ -102,6 +151,7 @@ class WebRequest {
         headers_ = headers;
         if (curlHeaderList_) {
             curl_slist_free_all(curlHeaderList_);
+            curlHeaderList_ = NULL;
         }
         if (!headers_.empty()) {
             for (auto kv : headers_) {
@@ -115,7 +165,7 @@ class WebRequest {
         params_ = params;
         BuildURL();
     }
-    void SetMethod(const string& method) {
+    void SetMethod(const string& method, size_t size = 0) {
         method_ = ToUpper(method);
         if (method_ == "GET") {
             curl_easy_setopt(curl_, CURLOPT_NOBODY, 0L);
@@ -126,25 +176,70 @@ class WebRequest {
         } else if (method == "DELETE") {
             curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "DELETE");
         } else if (method == "POST") {
+            curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "POST");
             curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE,
                              urlEncodedPostData_.size());
             curl_easy_setopt(curl_, CURLOPT_POSTFIELDS,
                              urlEncodedPostData_.c_str());
         } else if (method_ == "PUT") {
-            throw "PUT NOT IMPLEMENTED";
+            curl_easy_setopt(curl_, CURLOPT_UPLOAD, 1L);
+            curl_easy_setopt(curl_, CURLOPT_INFILESIZE, size);
+            // curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "PUT");
         }
     }
-    void SetPostData(const map<string, string>& postData) {
+    template <typename T>
+    void SetPostData(const T& postData) {  // can be dict or string or
+                                           // anything for which an
+                                           // urlencode function exists
         urlEncodedPostData_ = UrlEncode(postData);
     }
+
     long StatusCode() const { return responseCode_; }
-    const vector<uint8_t>& GetContent() const { return buffer_; }
+    const vector<uint8_t>& GetContent() const { return writeBuffer_.data; }
     const vector<uint8_t>& GetHeader() const { return headerBuffer_; }
+
+    template <typename T>
+    bool SetWriteFunction(WriteFunction f, T* ptr) {
+        if (curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, f) != CURLE_OK)
+            return false;
+        if (curl_easy_setopt(curl_, CURLOPT_WRITEDATA, ptr) != CURLE_OK)
+            return false;
+    }
+    template <typename T>
+    bool SetReadFunction(ReadFunction f, T* ptr) {
+        if (curl_easy_setopt(curl_, CURLOPT_READFUNCTION, f) != CURLE_OK)
+            return false;
+        if (curl_easy_setopt(curl_, CURLOPT_READDATA, ptr) != CURLE_OK)
+            return false;
+        return true;
+    }
+    void SetUploadData(const vector<uint8_t>& data) {
+        readBuffer_.data = data;
+        readBuffer_.offset = 0;
+    }
+
+    long UploadFile(const string& fname) {
+        struct stat st;
+        if(stat(fname.c_str(), &st)) return -1;
+        const size_t size = st.st_size;
+        cout << fname << endl;
+        FILE* file = fopen(fname.c_str(), "rb");
+        SetReadFunction(NULL, file);
+        SetMethod("PUT", size);
+        const long result = Send();
+        fclose(file);
+        return result;
+    }
+    string ErrorMsg() const { return errorBuffer_.data(); }
 
    private:
     void InitEnv() {
         // first thread initializes curl the others wait until
         // initialization is complete
+        // NOTE: libcurl initialization and cleanup are not thread safe,
+        // this code just guarantees that curl_global_init is called ony
+        // once
+        ++numInstances_;
         const InitState prev = globalInit_.exchange(INITIALIZING);
         if (prev == UNINITIALIZED) {
             if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
@@ -174,7 +269,12 @@ class WebRequest {
             goto handle_error;
         if (curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, Writer) != CURLE_OK)
             goto handle_error;
-        if (curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &buffer_) != CURLE_OK)
+        if (curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &writeBuffer_) !=
+            CURLE_OK)
+            goto handle_error;
+        if (curl_easy_setopt(curl_, CURLOPT_READFUNCTION, Reader) != CURLE_OK)
+            goto handle_error;
+        if (curl_easy_setopt(curl_, CURLOPT_READDATA, &readBuffer_) != CURLE_OK)
             goto handle_error;
         curl_easy_setopt(curl_, CURLOPT_HEADER, 1);
         if (curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, HeaderWriter) !=
@@ -202,25 +302,41 @@ class WebRequest {
         SetUrl(url_);
     }
     static size_t Writer(char* data, size_t size, size_t nmemb,
-                         std::vector<uint8_t>* writerData) {
+                         Buffer* outbuffer) {
+        assert(outbuffer);
+        size = size * nmemb;
+        outbuffer->data.insert(begin(outbuffer->data) + outbuffer->offset,
+                               (uint8_t*)data, (uint8_t*)data + size);
+        outbuffer->offset += size;
+        return size;
+    }
+    static size_t HeaderWriter(char* data, size_t size, size_t nmemb,
+                               vector<uint8_t>* writerData) {
         assert(writerData);
         writerData->insert(writerData->end(), (uint8_t*)data,
                            (uint8_t*)data + size * nmemb);
         return size * nmemb;
     }
-    static size_t HeaderWriter(char* data, size_t size, size_t nmemb,
-                               std::vector<uint8_t>* writerData) {
-        assert(writerData);
-        writerData->insert(writerData->end(), (uint8_t*)data,
-                           (uint8_t*)data + size * nmemb);
-        return size * nmemb;
+    static size_t Reader(void* ptr, size_t size, size_t nmemb,
+                         Buffer* inbuffer) {
+        cout << size << " " << nmemb << " " << inbuffer->offset << " ";
+        const auto b = begin(inbuffer->data) + inbuffer->offset;
+        if (b >= end(inbuffer->data)) {
+            return 0;
+        }
+        size = size * nmemb;
+        const auto e = std::min(b + size, end(inbuffer->data));
+        std::copy(b, e, (uint8_t*)ptr);
+        size = size_t(e - b);
+        inbuffer->offset += size;
+        return size;
     }
 
    private:
-    CURL* curl_;
+    CURL* curl_ = NULL;  // C pointer
     string url_;
     array<char, CURL_ERROR_SIZE> errorBuffer_;
-    vector<uint8_t> buffer_;
+    Buffer writeBuffer_;
     vector<uint8_t> headerBuffer_;
     string endpoint_;              // https://a.b.c:8080
     string path_;                  // /root/child1/child1.1
@@ -231,26 +347,124 @@ class WebRequest {
     curl_slist* curlHeaderList_ = NULL;  // C struct --> NULL not nullptr
     long responseCode_ = 0;              // CURL uses a long type
     string urlEncodedPostData_;
+    Buffer readBuffer_;
 
    private:
     enum InitState { UNINITIALIZED = 2, INITIALIZING = 1, INITIALIZED = 0 };
-    static atomic<InitState> globalInit_;
+    static std::atomic<InitState> globalInit_;
+    static std::atomic<int> numInstances_;
+    static std::mutex cleanupMutex_;
 };
 
-atomic<WebRequest::InitState> WebRequest::globalInit_(UNINITIALIZED);
+std::atomic<WebRequest::InitState> WebRequest::globalInit_{UNINITIALIZED};
+std::atomic<int> WebRequest::numInstances_{0};
+std::mutex WebRequest::cleanupMutex_;
+
+size_t WriteFS(char* data, size_t size, size_t nmemb, std::ofstream* os) {
+    assert(os);
+    assert(data);
+    os->write(data, size * nmemb);
+    return size * nmemb;
+}
+
+size_t ReadFS(void* out, size_t size, size_t nmemb, std::ifstream* is) {
+    assert(out);
+    assert(is);
+    is->read(reinterpret_cast<char*>(out), nmemb * size);
+    return is->gcount();
+}
+
+//------------------------------------------------------------------------------
+struct Args {
+    bool showHelp = false;
+    string s3AccessKey;
+    string s3SecretKey;
+    string endpoint;
+    string bucket;
+    string key;
+    string params;
+    string method = "GET";
+    string headers;
+    string data;
+};
+
+//------------------------------------------------------------------------------
+void PrintArgs(const Args& args) {
+    cout << "awsAccessKey: " << args.s3AccessKey << endl
+         << "awsSecretKey: " << args.s3SecretKey << endl
+         << "endpoint:     " << args.endpoint << endl
+         << "method:       " << ToUpper(args.method) << endl
+         << "bucket:       " << args.bucket << endl
+         << "key:          " << args.key << endl
+         << "parameters:   " << args.params << endl;
+}
 
 int main(int argc, char const* argv[]) {
-    const string path = "/uv-bucket-3/XXX";
-    const string access_key = "00a5752015a64525bc45c55e88d2f162";
-    const string bucket = "uv-bucket-3";
-    const string endpoint = "https://nimbus.pawsey.org.au:8080";
-    // const string endpoint = "http://localhost:8000";
-    const string secret_key = "d1b8bdb35b7649deac055c3f77670f7f";
-    const string method = "GET";
+    // The parser with the multiple option arguments and help option.
+    Args args;
+    auto cli =
+        lyra::help(args.showHelp)
+            .description("Send REST request with S3v4 signing") |
+        lyra::opt(args.s3AccessKey,
+                  "awsAccessKey")["-a"]["--access_key"]("AWS access key")
+            .required() |
+        lyra::opt(args.s3SecretKey,
+                  "awsSecretKey")["-s"]["--secret_key"]("AWS secret key")
+            .required() |
+        lyra::opt(args.endpoint, "endpoint")["-e"]["--endpoint"]("Endpoing URL")
+            .required() |
+        lyra::opt(args.method, "method")["-m"]["--method"](
+            "HTTP method: get | put | post | delete")
+            .optional() |
+        lyra::opt(args.params, "params")["-p"]["--params"](
+            "URL request parameters. key1=value1;key2=...")
+            .optional() |
+        lyra::opt(args.bucket, "bucket")["-b"]["--bucket"]("Bucket name")
+            .optional() |
+        lyra::opt(args.key, "key")["-k"]["--key"]("Key name").optional() |
+        lyra::opt(args.data, "content")["-d"]["--data"](
+            "Data, use '@' prefix for file name")
+            .optional() |
+        lyra::opt(args.params, "headers")["-H"]["--headers"](
+            "URL request headers. header1:value1;header2:...")
+            .optional();
+    // Parse the program arguments:
+    auto result = cli.parse({argc, argv});
+    if (!result) {
+        cerr << result.errorMessage() << endl;
+        cerr << cli << endl;
+        exit(1);
+    }
+    if (args.showHelp) {
+        cout << cli;
+        return 0;
+    }
+    string path;
+    if (!args.bucket.empty()) {
+        path += "/" + args.bucket;
+        if (!args.key.empty()) path += "/" + args.key;
+    }
     auto headers =
-        SignHeaders(access_key, secret_key, endpoint, method, bucket, "XXX");
-    WebRequest req(endpoint, path, method, map<string, string>(), headers);
-    const bool status = req.Send();
+        SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint,
+                    args.method, args.bucket, args.key);
+    WebRequest req(args.endpoint, path, args.method, map<string, string>(),
+                   headers);
+
+    if (!args.data.empty()) {
+        
+        if (args.data[0] != '\\') {
+            req.SetUploadData(
+                vector<uint8_t>(begin(args.data), end(args.data)));
+            req.SetMethod("PUT", args.data.size());
+            req.Send();
+            req.StatusCode();
+        } else {
+            req.UploadFile(args.data.substr(1));
+        }
+    } else
+        req.Send();
+
+    cout << "Status: " << req.StatusCode() << endl;
     vector<uint8_t> resp = req.GetContent();
     string t(begin(resp), end(resp));
     cout << t << endl;
