@@ -30,29 +30,8 @@
  *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
-// Public interface to signing URLs and HTTP headers with the S3v4 protocol
-// standard.
-#pragma once
-#include <map>
-#include <string>
+#include <webclient.h>
 
-std::string SignedURL(const std::string& accessKey,
-                      const std::string& secretKey, int expiration,
-                      const std::string& endpoint, const std::string& method,
-                      const std::string& bucketName = "",
-                      const std::string& keyName = "",
-                      const std::map<std::string, std::string>& params =
-                          std::map<std::string, std::string>(),
-                      const std::string& region = "us-east-1");
-                      
-//TODO: use struct to initialize
-std::map<std::string, std::string> SignHeaders(
-    const std::string& accessKey, const std::string& secretKey,
-    const std::string& endpoint, const std::string& method,
-    const std::string& bucketName = "", const std::string& keyName = "",
-    std::string payloadHash = "",
-    const std::map<std::string, std::string>& parameters =
-        std::map<std::string, std::string>(),
-    const std::map<std::string, std::string>& additionalHeaders =
-        std::map<std::string, std::string>(),
-    const std::string& region = "us-east-1", const std::string& service = "s3");
+std::atomic<WebRequest::InitState> WebRequest::globalInit_{UNINITIALIZED};
+std::atomic<int> WebRequest::numInstances_{0};
+std::mutex WebRequest::cleanupMutex_;

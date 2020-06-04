@@ -2,7 +2,7 @@
 set(PRESIGN_SRCS presign_url.cpp aws_sign.cpp url_utility.cpp)
 set(SIGN_HEADER_SRCS sign_header.cpp aws_sign.cpp url_utility.cpp)
 #set(REST_CLIENT_SRCS "rest-client.cpp" url_utility.cpp)
-set(S3_CLIENT_SRCS "s3-client.cpp" url_utility.cpp aws_sign.cpp)
+set(S3_CLIENT_SRCS "s3-client.cpp" url_utility.cpp aws_sign.cpp webclient.cpp)
 set(CMAKE_CXX_FLAGS "-std=c++17" ${CMAKE_CXX_FLAGS})
 add_executable("s3-presign" ${PRESIGN_SRCS})
 add_executable("sign-headers" ${SIGN_HEADER_SRCS})
