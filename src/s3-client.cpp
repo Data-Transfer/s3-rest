@@ -1,4 +1,3 @@
-//!!!!!!!! IN PROGRESS DO NOT TOUCH
 
 /*******************************************************************************
  * BSD 3-Clause License
@@ -34,7 +33,6 @@
  *******************************************************************************/
 
 // Send S3v4 signed REST requests: to be finished then split into separate files
-// DO NOT TOUCH
 
 #include <aws_sign.h>
 #include <curl/curl.h>
@@ -82,8 +80,8 @@ class WebRequest {
                                     void* userdata);
 
     struct Buffer {
-        size_t offset = 0;
-        vector<uint8_t> data;
+        size_t offset = 0;     // pointer to next insertion point
+        vector<uint8_t> data;  // buffer
     };
 
    public:
@@ -204,6 +202,7 @@ class WebRequest {
             return false;
         if (curl_easy_setopt(curl_, CURLOPT_WRITEDATA, ptr) != CURLE_OK)
             return false;
+        return true;
     }
     template <typename T>
     bool SetReadFunction(ReadFunction f, T* ptr) {
@@ -218,19 +217,24 @@ class WebRequest {
         readBuffer_.offset = 0;
     }
 
-    long UploadFile(const string& fname) {
+    bool UploadFile(const string& fname) {
         struct stat st;
-        if(stat(fname.c_str(), &st)) return -1;
+        if (stat(fname.c_str(), &st)) return -1;
         const size_t size = st.st_size;
-        cout << fname << endl;
         FILE* file = fopen(fname.c_str(), "rb");
         SetReadFunction(NULL, file);
         SetMethod("PUT", size);
-        const long result = Send();
+        const bool result = Send();
         fclose(file);
         return result;
     }
     string ErrorMsg() const { return errorBuffer_.data(); }
+    CURLcode SetOpt(CURLoption option, va_list argp) {
+        return curl_easy_setopt(curl_, option, argp);
+    }
+    CURLcode GetInfo(CURLINFO info, va_list argp) {
+        return curl_easy_getinfo(curl_, info, argp);
+    }
 
    private:
     void InitEnv() {
@@ -258,6 +262,7 @@ class WebRequest {
     }
     bool Init() {
         curl_ = curl_easy_init();
+        //curl_easy_setopt(curl_, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
         if (!curl_) {
             throw(runtime_error("Cannot create Curl connection"));
             return false;
@@ -276,7 +281,6 @@ class WebRequest {
             goto handle_error;
         if (curl_easy_setopt(curl_, CURLOPT_READDATA, &readBuffer_) != CURLE_OK)
             goto handle_error;
-        curl_easy_setopt(curl_, CURLOPT_HEADER, 1);
         if (curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, HeaderWriter) !=
             CURLE_OK)
             goto handle_error;
@@ -345,7 +349,7 @@ class WebRequest {
                                   // key1=val1&key2=val2...
     string method_;               // GET | POST | PUT | HEAD | DELETE
     curl_slist* curlHeaderList_ = NULL;  // C struct --> NULL not nullptr
-    long responseCode_ = 0;              // CURL uses a long type
+    long responseCode_ = 0;              // CURL uses a long type for status
     string urlEncodedPostData_;
     Buffer readBuffer_;
 
@@ -386,6 +390,7 @@ struct Args {
     string method = "GET";
     string headers;
     string data;
+    string outfile;
 };
 
 //------------------------------------------------------------------------------
@@ -427,7 +432,8 @@ int main(int argc, char const* argv[]) {
             .optional() |
         lyra::opt(args.params, "headers")["-H"]["--headers"](
             "URL request headers. header1:value1;header2:...")
-            .optional();
+            .optional() |
+        lyra::opt(args.outfile, "output")["-o"]["--out-file"]("output file");
     // Parse the program arguments:
     auto result = cli.parse({argc, argv});
     if (!result) {
@@ -449,9 +455,12 @@ int main(int argc, char const* argv[]) {
                     args.method, args.bucket, args.key);
     WebRequest req(args.endpoint, path, args.method, map<string, string>(),
                    headers);
-
+    FILE* of = NULL;
+    if (!args.outfile.empty()) {
+        of = fopen(args.outfile.c_str(), "wb");
+        req.SetWriteFunction(NULL, of);
+    }
     if (!args.data.empty()) {
-        
         if (args.data[0] != '\\') {
             req.SetUploadData(
                 vector<uint8_t>(begin(args.data), end(args.data)));
@@ -463,7 +472,7 @@ int main(int argc, char const* argv[]) {
         }
     } else
         req.Send();
-
+    if (of) fclose(of);
     cout << "Status: " << req.StatusCode() << endl;
     vector<uint8_t> resp = req.GetContent();
     string t(begin(resp), end(resp));
