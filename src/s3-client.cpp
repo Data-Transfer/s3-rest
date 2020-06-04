@@ -84,7 +84,7 @@ int main(int argc, char const* argv[]) {
             .optional() |
         lyra::opt(args.key, "key")["-k"]["--key"]("Key name").optional() |
         lyra::opt(args.data, "content")["-d"]["--data"](
-            "Data, use '@' prefix for file name")
+            "Data, use '\' prefix for file name")
             .optional() |
         lyra::opt(args.headers, "headers")["-H"]["--headers"](
             "URL request headers. header1:value1;header2:...")
