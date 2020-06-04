@@ -44,7 +44,6 @@
 using namespace std;
 
 
-
 //------------------------------------------------------------------------------
 struct Args {
     bool showHelp = false;
@@ -61,16 +60,6 @@ struct Args {
 };
 
 //------------------------------------------------------------------------------
-void PrintArgs(const Args& args) {
-    cout << "awsAccessKey: " << args.s3AccessKey << endl
-         << "awsSecretKey: " << args.s3SecretKey << endl
-         << "endpoint:     " << args.endpoint << endl
-         << "method:       " << ToUpper(args.method) << endl
-         << "bucket:       " << args.bucket << endl
-         << "key:          " << args.key << endl
-         << "parameters:   " << args.params << endl;
-}
-
 int main(int argc, char const* argv[]) {
     // The parser with the multiple option arguments and help option.
     Args args;
@@ -97,10 +86,11 @@ int main(int argc, char const* argv[]) {
         lyra::opt(args.data, "content")["-d"]["--data"](
             "Data, use '@' prefix for file name")
             .optional() |
-        lyra::opt(args.params, "headers")["-H"]["--headers"](
+        lyra::opt(args.headers, "headers")["-H"]["--headers"](
             "URL request headers. header1:value1;header2:...")
             .optional() |
         lyra::opt(args.outfile, "output")["-o"]["--out-file"]("output file");
+
     // Parse the program arguments:
     auto result = cli.parse({argc, argv});
     if (!result) {
@@ -117,23 +107,28 @@ int main(int argc, char const* argv[]) {
         path += "/" + args.bucket;
         if (!args.key.empty()) path += "/" + args.key;
     }
+    const map<string, string> params = ParseParams(args.params);
+    const map<string, string> additionalHeaders = ParseHeaders(args.headers);
     auto headers =
         SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint,
-                    args.method, args.bucket, args.key);
-    WebRequest req(args.endpoint, path, args.method, map<string, string>(),
-                   headers);
+                    args.method, args.bucket, args.key, "", params,
+                    additionalHeaders);
+    WebRequest req(args.endpoint, path, args.method, params, headers);
     FILE* of = NULL;
     if (!args.outfile.empty()) {
         of = fopen(args.outfile.c_str(), "wb");
-        req.SetWriteFunction(NULL, of);
+        req.SetWriteFunction(NULL, of); //default is to write to file
     }
     if (!args.data.empty()) {
         if (args.data[0] != '\\') {
-            req.SetUploadData(
-                vector<uint8_t>(begin(args.data), end(args.data)));
-            req.SetMethod("PUT", args.data.size());
+            if(ToLower(args.method) == "post") {
+                req.SetPostData(ParseParams(args.data));
+                req.SetMethod("POST");
+            } else { // "put"
+                req.SetUploadData(
+                    vector<uint8_t>(begin(args.data), end(args.data)));
+            }
             req.Send();
-            req.StatusCode();
         } else {
             req.UploadFile(args.data.substr(1));
         }
@@ -145,7 +140,7 @@ int main(int argc, char const* argv[]) {
     string t(begin(resp), end(resp));
     cout << t << endl;
     vector<uint8_t> h = req.GetHeader();
-    string hs(begin(resp), end(resp));
+    string hs(begin(h), end(h));
     cout << hs << endl;
     return 0;
 }

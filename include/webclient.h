@@ -199,7 +199,7 @@ class WebRequest {
 
     bool UploadFile(const std::string& fname) {
         struct stat st;
-        if (stat(fname.c_str(), &st)) return -1;
+        if (stat(fname.c_str(), &st)) return false;
         const size_t size = st.st_size;
         FILE* file = fopen(fname.c_str(), "rb");
         SetReadFunction(NULL, file);

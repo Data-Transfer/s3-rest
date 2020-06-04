@@ -119,12 +119,13 @@ string ToLower(string s) {
 // From "key1=value1;key2=value2;key3=;key4" to {key, value} dictionary
 map<string, string> ParseParams(string s) {
     if (s.empty()) return map<string, string>();
-    if (s.back() != '=') s += '=';
     vector<string> slist;
     split(s, slist, ";");
     map<string, string> params;
     for (auto p : slist) {
         vector<string> kv;
+        if(p.find_first_of("=") == string::npos)
+            p += "=";
         split(p, kv, "=", 1);
         assert(kv.size() == 1 || kv.size() == 2);
         const string key = kv[0];
