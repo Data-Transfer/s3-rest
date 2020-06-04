@@ -55,20 +55,6 @@
 
 using namespace std;
 
-// Issues with curl_global_cleanup: cannot be used safely in a multithreaded
-// application, mentioning calls to "other libraries" without listing which.
-// Quoting:
-// This function releases resources acquired by curl_global_init.
-// You should call curl_global_cleanup once for each call you make
-// to curl_global_init, after you are done using libcurl.
-// This function is not thread safe. You must not call it when any
-// other thread in the program (i.e. a thread sharing the same memory)
-// is running. This doesn't just mean no other thread that is using libcurl.
-// Because curl_global_cleanup calls functions of other libraries that are
-// similarly thread unsafe, it could conflict with any other thread that
-// uses these other libraries.
-// See the description in libcurl of global environment requirements for
-// details of how to use this function.
 
 // TODO: change configuration when method changes, add option to specify
 // read/write callbacks, write UrlEncode(map) using curl's url encode function
@@ -121,7 +107,9 @@ class WebRequest {
             // call to curl_global_cleanup
             curl_easy_cleanup(curl_);
             const std::lock_guard<std::mutex> lock(cleanupMutex_);
-            curl_global_cleanup();
+            --numInstances_;
+            if(numInstances_ == 0)
+                curl_global_cleanup();
         }
     }
     bool Send() {
@@ -242,11 +230,14 @@ class WebRequest {
         // initialization is complete
         // NOTE: libcurl initialization and cleanup are not thread safe,
         // this code just guarantees that curl_global_init is called ony
-        // once
+        // once TODO: with lock and numInstances_ variable globalInit
+        // useless --> remove
+        const std::lock_guard<std::mutex> lock(cleanupMutex_);
         ++numInstances_;
         const InitState prev = globalInit_.exchange(INITIALIZING);
         if (prev == UNINITIALIZED) {
             if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+                throw std::runtime_error("Cannot initialize libcurl");
             }
             globalInit_.store(INITIALIZED);
         } else {
@@ -323,7 +314,6 @@ class WebRequest {
     }
     static size_t Reader(void* ptr, size_t size, size_t nmemb,
                          Buffer* inbuffer) {
-        cout << size << " " << nmemb << " " << inbuffer->offset << " ";
         const auto b = begin(inbuffer->data) + inbuffer->offset;
         if (b >= end(inbuffer->data)) {
             return 0;
