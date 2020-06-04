@@ -182,7 +182,7 @@ class WebRequest {
         } else if (method_ == "PUT") {
             curl_easy_setopt(curl_, CURLOPT_UPLOAD, 1L);
             curl_easy_setopt(curl_, CURLOPT_INFILESIZE, size);
-            // curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "PUT");
+            curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "PUT");
         }
     }
     template <typename T>
