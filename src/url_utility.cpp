@@ -57,7 +57,7 @@ URL ParseURL(const string& s) {
     if(m[4].str().empty()) {
         return {-1, m[2], m[1]};
     } else {
-        return {stoi(m[4]), m[2], m[1]};
+        return {int(stoul(m[4])), m[2], m[1]};
     }
 }
 
