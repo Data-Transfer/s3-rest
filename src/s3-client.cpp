@@ -143,10 +143,10 @@ int main(int argc, char const* argv[]) {
         }
         const map<string, string> params = ParseParams(args.params);
         map<string, string> headers = ParseHeaders(args.headers);
-        if(!args.s3AccessKey.empty()) {
-            auto signedHeaders = SignHeaders(args.s3AccessKey, args.s3SecretKey,
-                                            args.endpoint, args.method, args.bucket,
-                                            args.key, "", params, headers);
+        if (!args.s3AccessKey.empty()) {
+            auto signedHeaders = SignHeaders(
+                args.s3AccessKey, args.s3SecretKey, args.endpoint, args.method,
+                args.bucket, args.key, "", params, headers);
             headers.insert(begin(signedHeaders), end(signedHeaders));
         }
         WebRequest req(args.endpoint, path, args.method, params, headers);
