@@ -1,0 +1,12 @@
+<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+   <TagSet>
+      <Tag>
+         <Key>Tag1</Key>
+         <Value>Value1</Value>
+      </Tag>
+      <Tag>
+         <Key>Tag2</Key>
+         <Value>Value2</Value>
+      </Tag>
+   </TagSet>
+</Tagging>

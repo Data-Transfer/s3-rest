@@ -1,0 +1,10 @@
+<NotificationConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    <TopicConfiguration>
+        <Id>CreateObject</Id>
+        <!--replace with actual ARN-->
+        <!--arn:aws:sns:pawsey:a13e4c5196ec45b8ada423123b9b0772:ObjectCreated-->
+        <Topic>$ARN</Topic>
+        <!--only notify when object created through a PUT request-->
+        <Event>s3:ObjectCreated:Put</Event>
+    </TopicConfiguration>
+</NotificationConfiguration>

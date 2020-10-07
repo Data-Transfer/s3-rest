@@ -1,0 +1,8 @@
+<NotificationConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    <TopicConfiguration>
+        <Id>AllObjectActions</Id>
+        <!--replace with actual ARN-->
+        <!--arn:aws:sns:pawsey:a13e4c5196ec45b8ada423123b9b0772:ObjectCreated3-->
+        <Topic>$ARN</Topic>
+    </TopicConfiguration>
+</NotificationConfiguration>

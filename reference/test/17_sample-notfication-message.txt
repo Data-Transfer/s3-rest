@@ -1,0 +1,23 @@
+Actual notification received from Ceph when object added.
+
+POST / HTTP/1.1
+Host: 146.118.66.215
+Accept: */*
+Content-Length: 1064
+Expect: 100-continue
+
+{"Records":[{"eventVersion":"2.2","eventSource":"ceph:s3","awsRegion":"",
+"eventTime":"2020-09-04 15:48:47.033491Z","eventName":"s3:ObjectCreated:Put",
+"userIdentity":{"principalId":"a13e4c5196ec45b8ada423123b9b0772"},
+"requestParameters":{"sourceIPAddress":""},
+"responseElements":{"x-amz-request-id":"2f453f51-9134-4e62-893f-88275f85b3fb.2107318545.17533",
+"x-amz-id-2":"7d9b2111-objectstorage-pawsey"},"s3":{"s3SchemaVersion":"1.0",
+"configurationId":"AllObjectActions","bucket":{"name":"uv-bucket-3",
+"ownerIdentity":{"principalId":"a13e4c5196ec45b8ada423123b9b0772"},
+"arn":"arn:aws:s3::a13e4c5196ec45b8ada423123b9b0772:uv-bucket-3",
+"id":"2f453f51-9134-4e62-893f-88275f85b3fb.1975205633.1"},
+"object":{"key":"create-topic2","size":1473,"etag":"a22dccf9c3046007fb9c296bda5bd6cd",
+"versionId":".nW6MQdAwCZCy7xNfCOD67JHvvMjwb3","sequencer":"DF61525F20B94A04",
+"metadata":[{"key":"x-amz-content-sha256","val":"UNSIGNED-PAYLOAD"},
+"key":"x-amz-date","val":"20200904T154846Z"}],"tags":[]}},
+"eventId":"1599234527.072005.a22dccf9c3046007fb9c296bda5bd6cd","opaqueData":"data3"}]}

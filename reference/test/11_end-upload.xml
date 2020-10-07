@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    <Part>
+        <ETag>"9ac78ce76416d2032fd6dc7db0c5b597"</ETag>
+        <PartNumber>1</PartNumber>
+    </Part>
+    <Part>
+        <ETag>"18b0e9e32a237330ef96e406ec76a734"</ETag>
+        <PartNumber>2</PartNumber>
+    </Part>
+</CompleteMultipartUpload>

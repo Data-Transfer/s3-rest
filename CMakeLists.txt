@@ -42,19 +42,19 @@ project(s3-rest
 
 # Variables to be filled by dependent sub-projects
 
-	set(DEPENDENCIES "")
-	set(LIBRARIES "")
- 
+set(DEPENDENCIES "")
+set(LIBRARIES "")
+
 # Separate debug-release paths
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin/debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin/release)
 
 # Dependencies
     
-    include_directories(${CMAKE_SOURCE_DIR}/dep/hash)
-    add_subdirectory(dep/hash)
-    
-    include_directories(${CMAKE_SOURCE_DIR}/dep/Lyra/include)
+include_directories(${CMAKE_SOURCE_DIR}/dep/hash)
+add_subdirectory(dep/hash)
 
-    include_directories(${CMAKE_SOURCE_DIR}/include)
-	add_subdirectory(src)
+include_directories(${CMAKE_SOURCE_DIR}/dep/Lyra/include)
+
+include_directories(${CMAKE_SOURCE_DIR}/include)
+add_subdirectory(src)
