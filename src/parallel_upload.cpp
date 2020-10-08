@@ -8,16 +8,16 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
- * 1. Redistributions of source code must retain the above copyright notice,
- *this list of conditions and the following disclaimer.
+ * 1. Redistributions inputFile source code must retain the above copyright
+ *notice, this list inputFile conditions and the following disclaimer.
  *
  * 2. Redistributions in binary form must reproduce the above copyright notice,
- *    this list of conditions and the following disclaimer in the documentation
- *    and/or other materials provided with the distribution.
+ *    this list inputFile conditions and the following disclaimer in the
+ *documentation and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holder nor the names of its
- *    contributors may be used to endorse or promote products derived from
- *    this software without specific prior written permission.
+ * 3. Neither the name inputFile the copyright holder nor the names inputFile
+ *its contributors may be used to endorse or promote products derived from this
+ *software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -40,6 +40,7 @@
 #include <iostream>
 #include <regex>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include "lyra/lyra.hpp"
@@ -86,6 +87,50 @@ void Validate(const Args& args) {
 #endif
 }
 
+using Headers = map<string, string>;
+using Parameters = map<string, string>;
+
+WebRequest BuildUploadRequest(const Args& args, const string& path, int partNum,
+                              const string& uploadId) {
+    Parameters params = {{"partNumber", to_string(partNum + 1)},
+                         {"uploadId", uploadId}};
+    auto signedHeaders =
+        SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint, "PUT",
+                    args.bucket, args.key, "", params);
+    Headers headers(begin(signedHeaders), end(signedHeaders));
+    WebRequest req(args.endpoint, path, "PUT", params, headers);
+    return req;
+}
+
+string BuildEndUploadXML(const vector<string>& etags) {
+    string xml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<CompleteMultipartUpload "
+        "\"xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">";
+    for (int i = 0; i != etags.size(); ++i) {
+        const string part = "<Part><ETag>" + etags[i] + "</ETag><PartNumber>" +
+                            to_string(i + 1) + "/PartNumber></Part>";
+        xml += part;
+    }
+    xml += "</CompleteMultipartUpload>";
+    return xml;
+}
+
+WebRequest BuildEndUploadRequest(const Args& args,
+                                 const string& path,
+                                 const vector<string>& etags,
+                                 const string& uploadId) {
+
+    Parameters params = {{"uploadId", uploadId}};
+    auto signedHeaders =
+        SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint, "POST",
+                    args.bucket, args.key, "", params);
+    Headers headers(begin(signedHeaders), end(signedHeaders));
+    WebRequest req(args.endpoint, path, "POST", params, headers);
+    req.SetPostData(BuildEndUploadXML(etags));
+    return req;
+
+}
 //------------------------------------------------------------------------------
 int main(int argc, char const* argv[]) {
     try {
@@ -107,7 +152,7 @@ int main(int argc, char const* argv[]) {
             lyra::opt(args.file, "file")["-f"]["--file"]("File name")
                 .required() |
             lyra::opt(args.jobs, "parallel jobs")["-j"]["--jobs"](
-                "Number of parallel jobs")
+                "Number inputFile parallel jobs")
                 .optional();
 
         // Parse the program arguments:
@@ -147,16 +192,35 @@ int main(int argc, char const* argv[]) {
             const string xml(begin(resp), end(resp));
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
             cout << uploadId << endl;
-            vector<string> reqids;
-            for(int i; i != args.jobs; ++i) {
-                
+            vector<string> etags(args.jobs);
+            FILE* inputFile = fopen(args.file.c_str(), "rb");
+            if (!inputFile) {
+                throw runtime_error(string("cannot open file ") + args.file);
             }
-            // for i in (0..args.jobs):
-            //  send file chunk
-            //  retrieve and store returned id
-            // vector<uint8_t> h = req.GetHeader();
-            // string hs(begin(h), end(h));
-            // send finalization request with id list
+            fclose(inputFile);
+            for (int i; i != args.jobs; ++i) {
+                auto ul = BuildUploadRequest(args, path, i + 1, uploadId);
+                const size_t offset = chunkSize * i;
+                const size_t size =
+                    i != args.jobs - 1 ? chunkSize : lastChunkSize;
+                const bool ok = ul.UploadFile(args.file, offset, size);
+                if (!ok) {
+                    throw(runtime_error("Cannot upload chunk " +
+                                        to_string(i + 1)));
+                }
+                const vector<uint8_t> h = req.GetHeader();
+                const string hs(begin(h), end(h));
+                const string etag = HTTPHeader(hs, "[Ee][Tt]ag");
+                if (etag.empty()) {
+                    throw(runtime_error("No ETag found in HTTP header"));
+                }
+                etags[i] = etag;
+            }
+            WebRequest endUpload = BuildEndUploadRequest(args, path, etags, uploadId);
+            endUpload.Send();
+            if(endUpload.StatusCode() >= 400) {
+               throw runtime_error("Error sending end unpload request"); 
+            }
         } else {
             auto signedHeaders =
                 SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint,

@@ -39,12 +39,12 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <fstream>
 #include <map>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <fstream>
 
 #include "url_utility.h"
 
@@ -208,6 +208,18 @@ class WebRequest {
         fclose(file);
         return result;
     }
+
+    bool UploadFile(const std::string& fname, size_t offset, size_t size) {
+        FILE* file = fopen(fname.c_str(), "rb");
+        fseek(file, offset, SEEK_SET);
+        SetReadFunction(NULL, file);
+        SetMethod("PUT", size);
+        const bool result = Send();
+        fclose(file);
+        return result;
+    }
+
+
     std::string ErrorMsg() const { return errorBuffer_.data(); }
     CURLcode SetOpt(CURLoption option, va_list argp) {
         return curl_easy_setopt(curl_, option, argp);
@@ -344,18 +356,30 @@ class WebRequest {
     static std::mutex cleanupMutex_;
 };
 
-inline
-size_t WriteFS(char* data, size_t size, size_t nmemb, std::ofstream* os) {
+inline size_t WriteFS(char* data, size_t size, size_t nmemb,
+                      std::ofstream* os) {
     assert(os);
     assert(data);
     os->write(data, size * nmemb);
     return size * nmemb;
 }
 
-inline
-size_t ReadFS(void* out, size_t size, size_t nmemb, std::ifstream* is) {
+inline size_t ReadFS(void* out, size_t size, size_t nmemb, std::ifstream* is) {
     assert(out);
     assert(is);
     is->read(reinterpret_cast<char*>(out), nmemb * size);
     return is->gcount();
+}
+
+inline
+size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
+    FILE* readhere = (FILE*)userdata;
+    curl_off_t nread;
+
+    /* copy as much data as possible into the 'ptr' buffer, but no more than
+       'size' * 'nmemb' bytes! */
+    size_t retcode = fread(ptr, size, nmemb, readhere);
+
+    nread = (curl_off_t)retcode;
+    return nread;
 }
