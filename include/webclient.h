@@ -45,8 +45,11 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include "url_utility.h"
+
+size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata);
 
 class WebRequest {
     using WriteFunction = size_t (*)(char* data, size_t size, size_t nmemb,
@@ -161,7 +164,7 @@ class WebRequest {
                              urlEncodedPostData_.c_str());
         } else if (method_ == "PUT") {
             curl_easy_setopt(curl_, CURLOPT_UPLOAD, 1L);
-            curl_easy_setopt(curl_, CURLOPT_INFILESIZE, size);
+            curl_easy_setopt(curl_, CURLOPT_INFILESIZE_LARGE, size);
             curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "PUT");
         }
     }
@@ -170,9 +173,13 @@ class WebRequest {
                                            // anything for which an
                                            // urlencode function exists
         urlEncodedPostData_ = UrlEncode(postData);
+        curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, urlEncodedPostData_.size());
+        curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, 
+                             urlEncodedPostData_.c_str());
     }
 
     long StatusCode() const { return responseCode_; }
+    const std::string& GetUrl() const { return url_; }
     const std::vector<uint8_t>& GetContent() const { return writeBuffer_.data; }
     const std::vector<uint8_t>& GetHeader() const { return headerBuffer_; }
 
@@ -212,8 +219,9 @@ class WebRequest {
     bool UploadFile(const std::string& fname, size_t offset, size_t size) {
         FILE* file = fopen(fname.c_str(), "rb");
         fseek(file, offset, SEEK_SET);
-        SetReadFunction(NULL, file);
+        SetReadFunction(ReadFile, file);
         SetMethod("PUT", size);
+        std::cout << url_ << std::endl;
         const bool result = Send();
         fclose(file);
         return result;
@@ -238,7 +246,7 @@ class WebRequest {
         // useless --> remove
         const std::lock_guard<std::mutex> lock(cleanupMutex_);
         ++numInstances_;
-        const InitState prev = globalInit_.exchange(INITIALIZING);
+        const InitState prev = globalInit_.load();
         if (prev == UNINITIALIZED) {
             if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
                 throw std::runtime_error("Cannot initialize libcurl");
@@ -246,8 +254,7 @@ class WebRequest {
             globalInit_.store(INITIALIZED);
         } else {
             // C++ 20: can use wait, busy loop instead
-            while (globalInit_.load() != INITIALIZED)
-                ;
+            while (globalInit_.load() != INITIALIZED);
         }
         Init();
         if (!endpoint_.empty())
@@ -288,6 +295,12 @@ class WebRequest {
         if (!headers_.empty()) {
             SetHeaders(headers_);
         }
+        if (!params_.empty()) {
+            SetReqParameters(params_);
+        }
+        if(!endpoint_.empty()) {
+            BuildURL();
+        }
         return true;
     handle_error:
         throw(std::runtime_error(errorBuffer_.data()));
@@ -298,6 +311,10 @@ class WebRequest {
         if (!params_.empty()) {
             url_ += "?" + UrlEncode(params_);
         }
+        for(auto i: params_) {
+            std::cout << i.first << " " << i.second << std::endl;
+        }
+
         SetUrl(url_);
     }
     static size_t Writer(char* data, size_t size, size_t nmemb,
@@ -350,7 +367,7 @@ class WebRequest {
     Buffer readBuffer_;
 
    private:
-    enum InitState { UNINITIALIZED = 2, INITIALIZING = 1, INITIALIZED = 0 };
+    enum InitState { UNINITIALIZED = 0, INITIALIZED = 1 };
     static std::atomic<InitState> globalInit_;
     static std::atomic<int> numInstances_;
     static std::mutex cleanupMutex_;
@@ -369,17 +386,4 @@ inline size_t ReadFS(void* out, size_t size, size_t nmemb, std::ifstream* is) {
     assert(is);
     is->read(reinterpret_cast<char*>(out), nmemb * size);
     return is->gcount();
-}
-
-inline
-size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
-    FILE* readhere = (FILE*)userdata;
-    curl_off_t nread;
-
-    /* copy as much data as possible into the 'ptr' buffer, but no more than
-       'size' * 'nmemb' bytes! */
-    size_t retcode = fread(ptr, size, nmemb, readhere);
-
-    nread = (curl_off_t)retcode;
-    return nread;
 }

@@ -39,6 +39,8 @@
 #include <iostream>
 #include <regex>
 #include <set>
+#include <fstream>
+#include <streambuf>
 
 #include "lyra/lyra.hpp"
 #include "webclient.h"
@@ -116,7 +118,7 @@ int main(int argc, char const* argv[]) {
                 .optional() |
             lyra::opt(args.key, "key")["-k"]["--key"]("Key name").optional() |
             lyra::opt(args.data, "content")["-d"]["--data"](
-                "Data, use '\' prefix for file name")
+                "Data, use '\\' prefix for file name")
                 .optional() |
             lyra::opt(args.headers, "headers")["-H"]["--headers"](
                 "URL request headers. header1:value1;header2:...")
@@ -156,7 +158,7 @@ int main(int argc, char const* argv[]) {
             req.SetWriteFunction(NULL, of);  // default is to write to file
         }
         if (!args.data.empty()) {
-            if (args.data[0] != '\\') {
+            if (args.data[0] != '@') {
                 if (ToLower(args.method) == "post") {
                     req.SetPostData(ParseParams(args.data));
                     req.SetMethod("POST");
@@ -166,7 +168,18 @@ int main(int argc, char const* argv[]) {
                 }
                 req.Send();
             } else {
-                req.UploadFile(args.data.substr(1));
+                if(ToLower(args.method) == "put") {
+                    req.UploadFile(args.data.substr(1));
+                } else if(args.method == "post") {
+                    ifstream t(args.data.substr(1));
+                    const string str((istreambuf_iterator<char>(t)),
+                                     istreambuf_iterator<char>());
+                    req.SetMethod("POST");
+                    req.SetPostData(str);
+                    req.Send();
+                } else {
+                    throw domain_error("Wrong method " + args.method);
+                }
             }
         } else
             req.Send();

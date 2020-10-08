@@ -35,3 +35,11 @@
 std::atomic<WebRequest::InitState> WebRequest::globalInit_{UNINITIALIZED};
 std::atomic<int> WebRequest::numInstances_{0};
 std::mutex WebRequest::cleanupMutex_;
+
+size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
+    FILE* readhere = (FILE*)userdata;
+    /* copy as much data as possible into the 'ptr' buffer, but no more than
+       'size' * 'nmemb' bytes! */
+    const size_t retcode = fread(ptr, size, nmemb, readhere);
+    return retcode;
+}

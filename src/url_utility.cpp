@@ -40,7 +40,6 @@
 #include <utility>
 #include <vector>
 #include "url_utility.h"
-#include <iostream>
 using namespace std;
 
 //------------------------------------------------------------------------------
@@ -70,7 +69,6 @@ string UrlEncode(const std::string& s) {
 
     for (std::string::const_iterator i = s.begin(), n = s.end(); i != n; ++i) {
         std::string::value_type c = (*i);
-
         // Keep alphanumeric and other accepted characters intact
         if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
             escaped << c;
@@ -82,10 +80,9 @@ string UrlEncode(const std::string& s) {
         escaped << '%' << setw(2) << int((unsigned char)c);
         escaped << std::nouppercase;
     }
-
     return escaped.str();
 }
-
+#include <iostream>
 //------------------------------------------------------------------------------
 // Return urlencoded url request parameters from {key, value} dictionary
 string UrlEncode(const map<string, string>& p) {
@@ -93,6 +90,7 @@ string UrlEncode(const map<string, string>& p) {
     for (auto i : p) {
         url += UrlEncode(i.first) + "=" + UrlEncode(i.second);
         url += '&';
+
     }
     return string(url.begin(), --url.end());
 }
