@@ -174,8 +174,12 @@ class WebRequest {
                                            // urlencode function exists
         urlEncodedPostData_ = UrlEncode(postData);
         curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, urlEncodedPostData_.size());
-        curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, 
-                             urlEncodedPostData_.c_str());
+        curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, urlEncodedPostData_.c_str());
+    }
+
+    void SetRawPostData(const std::string& data) {
+        curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, data.size());
+        curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, data.c_str());
     }
 
     long StatusCode() const { return responseCode_; }

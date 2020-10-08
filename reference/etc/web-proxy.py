@@ -234,7 +234,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         from array import array
         content = self._read_content()
         global _MAX_LOG_CONTENT_LENGTH
-        if len(content) < _MAX_LOG_CONTENT_LENGTH:
+        if True: #len(content) < _MAX_LOG_CONTENT_LENGTH:
             log_msg = "------REQUEST_BODY" + "\n" + \
                       f"{str(content)}"
             self._log(log_msg)

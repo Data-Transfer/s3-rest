@@ -175,7 +175,7 @@ int main(int argc, char const* argv[]) {
                     const string str((istreambuf_iterator<char>(t)),
                                      istreambuf_iterator<char>());
                     req.SetMethod("POST");
-                    req.SetPostData(str);
+                    req.SetRawPostData(str);
                     req.Send();
                 } else {
                     throw domain_error("Wrong method " + args.method);
