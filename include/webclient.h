@@ -45,7 +45,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <iostream>
 
 #include "url_utility.h"
 
@@ -174,12 +173,12 @@ class WebRequest {
                                            // urlencode function exists
         urlEncodedPostData_ = UrlEncode(postData);
         curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, urlEncodedPostData_.size());
-        curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, urlEncodedPostData_.c_str());
+        curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS, urlEncodedPostData_.c_str());
     }
 
     void SetRawPostData(const std::string& data) {
         curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, data.size());
-        curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, data.c_str());
+        curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS, data.c_str());
     }
 
     long StatusCode() const { return responseCode_; }
@@ -225,7 +224,6 @@ class WebRequest {
         fseek(file, offset, SEEK_SET);
         SetReadFunction(ReadFile, file);
         SetMethod("PUT", size);
-        std::cout << url_ << std::endl;
         const bool result = Send();
         fclose(file);
         return result;
@@ -315,10 +313,6 @@ class WebRequest {
         if (!params_.empty()) {
             url_ += "?" + UrlEncode(params_);
         }
-        for(auto i: params_) {
-            std::cout << i.first << " " << i.second << std::endl;
-        }
-
         SetUrl(url_);
     }
     static size_t Writer(char* data, size_t size, size_t nmemb,

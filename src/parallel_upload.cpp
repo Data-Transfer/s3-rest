@@ -107,13 +107,11 @@ string BuildEndUploadXML(const vector<string>& etags) {
         "<CompleteMultipartUpload "
         "xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">\n";
     for (int i = 0; i != etags.size(); ++i) {
-        const string part = "<Part><ETag>" + etags[i] +
-                            "</ETag><PartNumber>" + to_string(i + 1) +
-                            "</PartNumber></Part>";
+        const string part = "<Part><ETag>" + etags[i] + "</ETag><PartNumber>" +
+                            to_string(i + 1) + "</PartNumber></Part>";
         xml += part;
     }
     xml += "</CompleteMultipartUpload>";
-    cout << xml << endl;
     return xml;
 }
 
@@ -126,6 +124,7 @@ WebRequest BuildEndUploadRequest(const Args& args, const string& path,
                     args.bucket, args.key, "", params);
     Headers headers(begin(signedHeaders), end(signedHeaders));
     WebRequest req(args.endpoint, path, "POST", params, headers);
+    req.SetMethod("POST");
     req.SetRawPostData(BuildEndUploadXML(etags));
     return req;
 }
@@ -204,13 +203,9 @@ int main(int argc, char const* argv[]) {
                     throw(runtime_error("Cannot upload chunk " +
                                         to_string(i + 1)));
                 }
-                vector<uint8_t> resp = ul.GetContent();
-                const string xml(begin(resp), end(resp));
-                cout << xml << endl;
                 const vector<uint8_t> h = ul.GetHeader();
                 const string hs(begin(h), end(h));
                 const string etag = HTTPHeader(hs, "[Ee][Tt]ag");
-                cout << hs << endl;
                 if (etag.empty()) {
                     throw(runtime_error("No ETag found in HTTP header"));
                 }
@@ -218,17 +213,18 @@ int main(int argc, char const* argv[]) {
             }
             WebRequest endUpload =
                 BuildEndUploadRequest(args, path, etags, uploadId);
-            cout << endUpload.GetUrl() << endl;
             endUpload.Send();
+            if (endUpload.StatusCode() >= 400) {
+                vector<uint8_t> resp2 = endUpload.GetContent();
+                const string xml2(begin(resp2), end(resp2));
+                const string errcode = XMLTag(xml2, "[Cc]ode");
+                throw runtime_error("Error sending end unpload request - " +
+                                    errcode);
+            }
             vector<uint8_t> resp2 = endUpload.GetContent();
             const string xml2(begin(resp2), end(resp2));
-            const vector<uint8_t> h = endUpload.GetHeader();
-            const string hs(begin(h), end(h));
-            cout << xml2 << endl;
-            if (endUpload.StatusCode() >= 400) {
-                throw runtime_error("Error sending end unpload request");
-            }
-            cout << "Upload successful" << endl;
+            const string etag = XMLTag(xml2, "[Ee][Tt]ag");
+            cout << etag << endl;
         } else {
             auto signedHeaders =
                 SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint,

@@ -24,3 +24,5 @@ target_link_libraries("s3-client" curl)
 add_dependencies("s3-upload" ${DEPENDENCIES})
 target_link_libraries("s3-upload" ${LIBRARIES})
 target_link_libraries("s3-upload" curl)
+
+#add_compile_definitions(...)

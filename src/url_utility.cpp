@@ -82,7 +82,6 @@ string UrlEncode(const std::string& s) {
     }
     return escaped.str();
 }
-#include <iostream>
 //------------------------------------------------------------------------------
 // Return urlencoded url request parameters from {key, value} dictionary
 string UrlEncode(const map<string, string>& p) {
