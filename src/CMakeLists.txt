@@ -1,4 +1,7 @@
 # Executables
+
+find_package( Threads )
+
 set(PRESIGN_SRCS presign_url.cpp aws_sign.cpp url_utility.cpp)
 set(SIGN_HEADER_SRCS sign_header.cpp aws_sign.cpp url_utility.cpp)
 set(PAR_UPLOAD_SRCS "parallel_upload.cpp" url_utility.cpp aws_sign.cpp webclient.cpp response_parser.cpp)
@@ -24,5 +27,6 @@ target_link_libraries("s3-client" curl)
 add_dependencies("s3-upload" ${DEPENDENCIES})
 target_link_libraries("s3-upload" ${LIBRARIES})
 target_link_libraries("s3-upload" curl)
+target_link_libraries("s3-upload" ${CMAKE_THREAD_LIBS_INIT} )
 
 #add_compile_definitions(...)

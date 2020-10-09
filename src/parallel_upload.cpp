@@ -37,6 +37,7 @@
 #include <aws_sign.h>
 
 #include <filesystem>
+#include <future>
 #include <iostream>
 #include <regex>
 #include <set>
@@ -101,14 +102,15 @@ WebRequest BuildUploadRequest(const Args& args, const string& path, int partNum,
     return req;
 }
 
-string BuildEndUploadXML(const vector<string>& etags) {
+string BuildEndUploadXML(vector<future<string>>& etags) {
     string xml =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<CompleteMultipartUpload "
         "xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">\n";
     for (int i = 0; i != etags.size(); ++i) {
-        const string part = "<Part><ETag>" + etags[i] + "</ETag><PartNumber>" +
-                            to_string(i + 1) + "</PartNumber></Part>";
+        const string part = "<Part><ETag>" + etags[i].get() +
+                            "</ETag><PartNumber>" + to_string(i + 1) +
+                            "</PartNumber></Part>";
         xml += part;
     }
     xml += "</CompleteMultipartUpload>";
@@ -116,7 +118,7 @@ string BuildEndUploadXML(const vector<string>& etags) {
 }
 
 WebRequest BuildEndUploadRequest(const Args& args, const string& path,
-                                 const vector<string>& etags,
+                                 vector<future<string>>& etags,
                                  const string& uploadId) {
     Parameters params = {{"uploadId", uploadId}};
     auto signedHeaders =
@@ -127,6 +129,26 @@ WebRequest BuildEndUploadRequest(const Args& args, const string& path,
     req.SetMethod("POST");
     req.SetRawPostData(BuildEndUploadXML(etags));
     return req;
+}
+
+string UploadPart(const Args& args, const string& path, int i,
+                  const string& uploadId, size_t chunkSize,
+                  size_t lastChunkSize) {
+    WebRequest ul = BuildUploadRequest(args, path, i, uploadId);
+    const size_t offset = chunkSize * i;
+    const size_t size = i != args.jobs - 1 ? chunkSize : lastChunkSize;
+    cout << "sending part " << i + 1 << " of " << args.jobs << endl;
+    const bool ok = ul.UploadFile(args.file, offset, size);
+    if (!ok) {
+        throw(runtime_error("Cannot upload chunk " + to_string(i + 1)));
+    }
+    const vector<uint8_t> h = ul.GetHeader();
+    const string hs(begin(h), end(h));
+    const string etag = HTTPHeader(hs, "[Ee][Tt]ag");
+    if (etag.empty()) {
+        throw(runtime_error("No ETag found in HTTP header"));
+    }
+    return etag;
 }
 //------------------------------------------------------------------------------
 int main(int argc, char const* argv[]) {
@@ -186,30 +208,15 @@ int main(int argc, char const* argv[]) {
             vector<uint8_t> resp = req.GetContent();
             const string xml(begin(resp), end(resp));
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
-            vector<string> etags(args.jobs);
+            vector<future<string>> etags(args.jobs);
             FILE* inputFile = fopen(args.file.c_str(), "rb");
             if (!inputFile) {
                 throw runtime_error(string("cannot open file ") + args.file);
             }
             fclose(inputFile);
             for (int i = 0; i != args.jobs; ++i) {
-                WebRequest ul = BuildUploadRequest(args, path, i, uploadId);
-                const size_t offset = chunkSize * i;
-                const size_t size =
-                    i != args.jobs - 1 ? chunkSize : lastChunkSize;
-                cout << "sending part " << i + 1 << " of " << args.jobs << endl;
-                const bool ok = ul.UploadFile(args.file, offset, size);
-                if (!ok) {
-                    throw(runtime_error("Cannot upload chunk " +
-                                        to_string(i + 1)));
-                }
-                const vector<uint8_t> h = ul.GetHeader();
-                const string hs(begin(h), end(h));
-                const string etag = HTTPHeader(hs, "[Ee][Tt]ag");
-                if (etag.empty()) {
-                    throw(runtime_error("No ETag found in HTTP header"));
-                }
-                etags[i] = etag;
+                etags[i] = async(launch::async, UploadPart, args, path, i,
+                                 uploadId, chunkSize, lastChunkSize);
             }
             WebRequest endUpload =
                 BuildEndUploadRequest(args, path, etags, uploadId);
@@ -233,6 +240,17 @@ int main(int argc, char const* argv[]) {
                                         end(signedHeaders));
             WebRequest req(args.endpoint, path, "PUT", {}, headers);
             req.UploadFile(args.file);
+            if (req.StatusCode() >= 400) {
+                vector<uint8_t> resp2 = req.GetContent();
+                const string xml2(begin(resp2), end(resp2));
+                const string errcode = XMLTag(xml2, "[Cc]ode");
+                throw runtime_error("Error sending end unpload request - " +
+                                    errcode);
+            }
+            vector<uint8_t> resp2 = req.GetContent();
+            const string xml2(begin(resp2), end(resp2));
+            const string etag = XMLTag(xml2, "[Ee][Tt]ag");
+            cout << etag << endl;
         }
         return 0;
     } catch (const exception& e) {
