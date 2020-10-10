@@ -85,10 +85,10 @@ void Validate(const Args& args) {
             "ERROR: invalid port number, should be in range[1-65535]");
     }
 #endif
-    const set<string> methods({"get", "put", "post", "delete"});
+    const set<string> methods({"get", "put", "post", "delete", "head"});
     if (methods.count(ToLower(args.method)) == 0) {
         throw invalid_argument(
-            "ERROR: only 'get', 'put', 'post', 'delete' methods supported");
+            "ERROR: only 'get', 'put', 'post', 'delete', 'head' methods supported");
     }
 }
 
@@ -109,7 +109,7 @@ int main(int argc, char const* argv[]) {
                       "endpoint")["-e"]["--endpoint"]("Endpoing URL")
                 .required() |
             lyra::opt(args.method, "method")["-m"]["--method"](
-                "HTTP method: get | put | post | delete")
+                "HTTP method: get | put | post | delete | head")
                 .optional() |
             lyra::opt(args.params, "params")["-p"]["--params"](
                 "URL request parameters. key1=value1;key2=...")

@@ -32,7 +32,7 @@
  *POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
 
-// Send S3v4 signed REST requests
+// Parallel file upload to S3 servers
 
 #include <aws_sign.h>
 
@@ -190,7 +190,7 @@ int main(int argc, char const* argv[]) {
 
         if (args.jobs > 1) {
             // retrieve file size
-            const size_t fileSize = std::filesystem::file_size(args.file);
+            const size_t fileSize = filesystem::file_size(args.file);
             // compute chunk size
             const size_t chunkSize = fileSize / args.jobs;
             // compute last chunk size
