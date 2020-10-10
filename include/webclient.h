@@ -168,7 +168,7 @@ class WebRequest {
         }
     }
     template <typename T>
-    void SetPostData(const T& postData) {  // can be dict or std::string or
+    void SetUrlEncodedPostData(const T& postData) {  // can be dict or std::string or
                                            // anything for which an
                                            // urlencode function exists
         urlEncodedPostData_ = UrlEncode(postData);
@@ -176,10 +176,18 @@ class WebRequest {
         curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS, urlEncodedPostData_.c_str());
     }
 
-    void SetRawPostData(const std::string& data) {
+    
+    void SetPostData(const std::string& data) {
         curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, data.size());
         curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS, data.c_str());
     }
+
+    template <typename T>
+    void SetRawPostData(const T& data, size_t size) {
+        curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, size);
+        curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE_LARGE, size);
+    }
+
 
     long StatusCode() const { return responseCode_; }
     const std::string& GetUrl() const { return url_; }

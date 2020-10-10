@@ -127,7 +127,7 @@ WebRequest BuildEndUploadRequest(const Args& args, const string& path,
     Headers headers(begin(signedHeaders), end(signedHeaders));
     WebRequest req(args.endpoint, path, "POST", params, headers);
     req.SetMethod("POST");
-    req.SetRawPostData(BuildEndUploadXML(etags));
+    req.SetPostData(BuildEndUploadXML(etags));
     return req;
 }
 

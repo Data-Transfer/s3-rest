@@ -160,7 +160,7 @@ int main(int argc, char const* argv[]) {
         if (!args.data.empty()) {
             if (args.data[0] != '@') {
                 if (ToLower(args.method) == "post") {
-                    req.SetPostData(ParseParams(args.data));
+                    req.SetUrlEncodedPostData(ParseParams(args.data));
                     req.SetMethod("POST");
                 } else {  // "put"
                     req.SetUploadData(
@@ -175,7 +175,7 @@ int main(int argc, char const* argv[]) {
                     const string str((istreambuf_iterator<char>(t)),
                                      istreambuf_iterator<char>());
                     req.SetMethod("POST");
-                    req.SetRawPostData(str);
+                    req.SetPostData(str);
                     req.Send();
                 } else {
                     throw domain_error("Wrong method " + args.method);
