@@ -51,6 +51,8 @@
 
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata);
 
+size_t WriteFile(char* data, size_t size, size_t nmemb, void* outbuffer);
+
 class WebRequest {
     using WriteFunction = size_t (*)(char* data, size_t size, size_t nmemb,
                                      void* writerData);

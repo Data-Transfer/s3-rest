@@ -37,9 +37,16 @@ std::atomic<int> WebRequest::numInstances_{0};
 std::mutex WebRequest::cleanupMutex_;
 
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
-    FILE* readhere = (FILE*)userdata;
+    FILE* readhere = (FILE*) userdata;
     /* copy as much data as possible into the 'ptr' buffer, but no more than
        'size' * 'nmemb' bytes! */
     const size_t retcode = fread(ptr, size, nmemb, readhere);
     return retcode;
+}
+
+size_t WriteFile(char* data, size_t size, size_t nmemb, void* userdata) {
+    FILE* writehere = (FILE*) userdata;
+    size = size * nmemb;
+    fwrite(data, 1, size, writehere);
+    return size;
 }
