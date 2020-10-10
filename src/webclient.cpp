@@ -32,7 +32,6 @@
  ******************************************************************************/
 #include <webclient.h>
 
-std::atomic<WebRequest::InitState> WebRequest::globalInit_{UNINITIALIZED};
 std::atomic<int> WebRequest::numInstances_{0};
 std::mutex WebRequest::cleanupMutex_;
 

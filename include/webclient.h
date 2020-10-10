@@ -257,22 +257,13 @@ class WebRequest {
         // once TODO: with lock and numInstances_ variable globalInit
         // useless --> remove
         const std::lock_guard<std::mutex> lock(cleanupMutex_);
-        ++numInstances_;
-        const InitState prev = globalInit_.load();
-        if (prev == UNINITIALIZED) {
+        if(numInstances_ == 0) {
             if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
                 throw std::runtime_error("Cannot initialize libcurl");
             }
-            globalInit_.store(INITIALIZED);
-        } else {
-            // C++ 20: can use wait, busy loop instead
-            while (globalInit_.load() != INITIALIZED);
         }
+        ++numInstances_;
         Init();
-        if (!endpoint_.empty())
-            BuildURL();
-        else
-            SetUrl(url_);
     }
     bool Init() {
         curl_ = curl_easy_init();
