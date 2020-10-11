@@ -39,13 +39,13 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <filesystem>
 
 #include "url_utility.h"
 
@@ -171,15 +171,17 @@ class WebRequest {
         }
     }
     template <typename T>
-    void SetUrlEncodedPostData(const T& postData) {  // can be dict or std::string or
-                                           // anything for which an
-                                           // urlencode function exists
+    void SetUrlEncodedPostData(
+        const T& postData) {  // can be dict or std::string or
+                              // anything for which an
+                              // urlencode function exists
         urlEncodedPostData_ = UrlEncode(postData);
-        curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, urlEncodedPostData_.size());
-        curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS, urlEncodedPostData_.c_str());
+        curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE,
+                         urlEncodedPostData_.size());
+        curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS,
+                         urlEncodedPostData_.c_str());
     }
 
-    
     void SetPostData(const std::string& data) {
         curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, data.size());
         curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS, data.c_str());
@@ -190,7 +192,6 @@ class WebRequest {
         curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, size);
         curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE_LARGE, size);
     }
-
 
     long StatusCode() const { return responseCode_; }
     const std::string& GetUrl() const { return url_; }
@@ -239,7 +240,6 @@ class WebRequest {
         return result;
     }
 
-
     std::string ErrorMsg() const { return errorBuffer_.data(); }
     CURLcode SetOpt(CURLoption option, va_list argp) {
         return curl_easy_setopt(curl_, option, argp);
@@ -257,7 +257,7 @@ class WebRequest {
         // once TODO: with lock and numInstances_ variable globalInit
         // useless --> remove
         const std::lock_guard<std::mutex> lock(cleanupMutex_);
-        if(numInstances_ == 0) {
+        if (numInstances_ == 0) {
             if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
                 throw std::runtime_error("Cannot initialize libcurl");
             }
@@ -292,6 +292,12 @@ class WebRequest {
         if (curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &headerBuffer_) !=
             CURLE_OK)
             goto handle_error;
+        if (curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L) != CURLE_OK) {
+            goto handle_error;
+        }
+        if (curl_easy_setopt(curl_, CURLOPT_NOPROGRESS, 1L) != CURLE_OK) {
+            goto handle_error;
+        };
         if (method_.size()) {
             SetMethod(method_);
         }
@@ -301,7 +307,7 @@ class WebRequest {
         if (!params_.empty()) {
             SetReqParameters(params_);
         }
-        if(!endpoint_.empty()) {
+        if (!endpoint_.empty()) {
             BuildURL();
         }
         return true;
