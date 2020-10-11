@@ -377,18 +377,3 @@ class WebRequest {
     static std::atomic<int> numInstances_;
     static std::mutex cleanupMutex_;
 };
-
-inline size_t WriteFS(char* data, size_t size, size_t nmemb,
-                      std::ofstream* os) {
-    assert(os);
-    assert(data);
-    os->write(data, size * nmemb);
-    return size * nmemb;
-}
-
-inline size_t ReadFS(void* out, size_t size, size_t nmemb, std::ifstream* is) {
-    assert(out);
-    assert(is);
-    is->read(reinterpret_cast<char*>(out), nmemb * size);
-    return is->gcount();
-}
