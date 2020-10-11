@@ -37,13 +37,13 @@
 #include <aws_sign.h>
 
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <iostream>
+#include <numeric>
 #include <regex>
 #include <set>
 #include <vector>
-#include <numeric>
-#include <fstream>
 
 #include "lyra/lyra.hpp"
 #include "response_parser.h"
@@ -93,7 +93,6 @@ using Headers = map<string, string>;
 using Parameters = map<string, string>;
 
 size_t ObjectSize(const Args& args, const string& path) {
-
     auto signedHeaders =
         SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint, "HEAD",
                     args.bucket, args.key);
@@ -107,14 +106,14 @@ size_t ObjectSize(const Args& args, const string& path) {
     return size_t(strtoull(cl.c_str(), &ns, 10));
 }
 
-int DownloadPart(const Args& args, const string& path, int id, 
-                 size_t chunkSize, size_t lastChunkSize) {
+int DownloadPart(const Args& args, const string& path, int id, size_t chunkSize,
+                 size_t lastChunkSize) {
     auto signedHeaders =
         SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint, "GET",
                     args.bucket, args.key);
     Headers headers(begin(signedHeaders), end(signedHeaders));
     const size_t sz = id < args.jobs - 1 ? chunkSize : lastChunkSize;
-    const string range = "bytes=" + to_string(id * chunkSize) + "-" + 
+    const string range = "bytes=" + to_string(id * chunkSize) + "-" +
                          to_string(id * chunkSize + sz - 1);
     headers.insert({"Range", range});
     WebRequest req(args.endpoint, path, "GET", {}, headers);
@@ -164,7 +163,7 @@ int main(int argc, char const* argv[]) {
         string path = "/" + args.bucket + "/" + args.key;
         vector<future<int>> status(args.jobs);
         if (args.jobs > 1) {
-            //retrieve file size from remote object
+            // retrieve file size from remote object
             const size_t fileSize = ObjectSize(args, path);
             // compute chunk size
             const size_t chunkSize = fileSize / args.jobs;
@@ -181,11 +180,12 @@ int main(int argc, char const* argv[]) {
                 status[i] = async(launch::async, DownloadPart, args, path, i,
                                   chunkSize, lastChunkSize);
             }
-            for(auto& i: status) {
-                if (i.get() > 300) throw runtime_error("Erroe downloading file");
+            for (auto& i : status) {
+                if (i.get() > 300)
+                    throw runtime_error("Erroe downloading file");
             }
         } else {
-          throw runtime_error("NOT IMPLEMENTED");
+            throw runtime_error("NOT IMPLEMENTED");
         }
         return 0;
     } catch (const exception& e) {
