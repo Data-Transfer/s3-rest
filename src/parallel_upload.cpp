@@ -46,6 +46,7 @@
 #include "lyra/lyra.hpp"
 #include "response_parser.h"
 #include "webclient.h"
+#include "utility.h"
 
 using namespace std;
 using namespace filesystem;
@@ -190,7 +191,7 @@ int main(int argc, char const* argv[]) {
 
         if (args.jobs > 1) {
             // retrieve file size
-            const size_t fileSize = filesystem::file_size(args.file);
+            const size_t fileSize = FileSize(args.file);
             // compute chunk size
             const size_t chunkSize = fileSize / args.jobs;
             // compute last chunk size

@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "url_utility.h"
+#include "utility.h"
 
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata);
 
@@ -221,7 +222,7 @@ class WebRequest {
 
     bool UploadFile(const std::string& fname) {
         struct stat st;
-        const size_t size = std::filesystem::file_size(fname);
+        const size_t size = FileSize(fname);
         FILE* file = fopen(fname.c_str(), "rb");
         SetReadFunction(NULL, file);
         SetMethod("PUT", size);

@@ -2,11 +2,11 @@
 
 find_package( Threads )
 
-set(PRESIGN_SRCS presign_url.cpp aws_sign.cpp url_utility.cpp)
-set(SIGN_HEADER_SRCS sign_header.cpp aws_sign.cpp url_utility.cpp)
-set(PAR_UPLOAD_SRCS "parallel_upload.cpp" url_utility.cpp aws_sign.cpp webclient.cpp response_parser.cpp)
-set(PAR_DLOAD_SRCS "parallel_download.cpp" url_utility.cpp aws_sign.cpp webclient.cpp response_parser.cpp)
-set(S3_CLIENT_SRCS "s3-client.cpp" url_utility.cpp aws_sign.cpp webclient.cpp)
+set(PRESIGN_SRCS presign_url.cpp aws_sign.cpp url_utility.cpp utility.cpp)
+set(SIGN_HEADER_SRCS sign_header.cpp aws_sign.cpp url_utility.cpp utility.cpp)
+set(PAR_UPLOAD_SRCS "parallel_upload.cpp" url_utility.cpp aws_sign.cpp webclient.cpp response_parser.cpp utility.cpp)
+set(PAR_DLOAD_SRCS "parallel_download.cpp" url_utility.cpp aws_sign.cpp webclient.cpp response_parser.cpp utility.cpp)
+set(S3_CLIENT_SRCS "s3-client.cpp" url_utility.cpp aws_sign.cpp webclient.cpp utility.cpp)
 
 set(CMAKE_CXX_FLAGS "-std=c++17" ${CMAKE_CXX_FLAGS})
 

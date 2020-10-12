@@ -34,6 +34,9 @@ if(${CMAKE_VERSION} VERSION_LESS 3.15)
     cmake_policy(VERSION ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION})
 endif()
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 project(s3-rest 
 			VERSION 1.0
             DESCRIPTION "Tools to sign and send S3 requests"
