@@ -47,13 +47,13 @@
 size_t FileSize(const std::string& filename) {
 #ifdef __GNUC__
 #if __GNUC__ > 8
-    return std::filesystem::file_size(fname);
+    return std::filesystem::file_size(filename);
 #else
     struct stat st;
     if (stat(filename.c_str(), &st) == 0) return st.st_size;
     return 0;
 #endif
 #else
-    return std::filesystem::file_size(fname);
+    return std::filesystem::file_size(filename);
 #endif
 }
