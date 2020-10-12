@@ -39,13 +39,13 @@
 #include <array>
 #include <atomic>
 #include <cassert>
-#include <filesystem>
 #include <fstream>
 #include <map>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include "url_utility.h"
 #include "utility.h"
@@ -219,7 +219,7 @@ class WebRequest {
         readBuffer_.data = data;
         readBuffer_.offset = 0;
     }
-
+    
     bool UploadFile(const std::string& fname) {
         struct stat st;
         const size_t size = FileSize(fname);
@@ -233,10 +233,18 @@ class WebRequest {
 
     bool UploadFile(const std::string& fname, size_t offset, size_t size) {
         FILE* file = fopen(fname.c_str(), "rb");
-        fseek(file, offset, SEEK_SET);
-        SetReadFunction(ReadFile, file);
+        if(!file) {
+            throw std::runtime_error("Cannot open file " + fname);
+        }
+        if(fseek(file, offset, SEEK_SET)) {
+            throw std::runtime_error("Cannot move file pointer");
+        }
+        if(!SetReadFunction(ReadFile, file)) {
+            throw std::runtime_error("Cannot set read function");
+        }
         SetMethod("PUT", size);
         const bool result = Send();
+        std::cout << ErrorMsg() << std::endl;
         fclose(file);
         return result;
     }
@@ -311,6 +319,7 @@ class WebRequest {
         if (!endpoint_.empty()) {
             BuildURL();
         }
+        curl_easy_setopt(curl_, CURLOPT_VERBOSE, 1L);
         return true;
     handle_error:
         throw(std::runtime_error(errorBuffer_.data()));

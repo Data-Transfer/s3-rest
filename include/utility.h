@@ -33,5 +33,15 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 
 size_t FileSize(const std::string& filename);
+
+using Dict = std::unordered_map<std::string, std::string>;
+using Toml = std::unordered_map<std::string, Dict>;
+
+Toml ParseTomlFile(const std::string& filename); //works with AWS format (nested s'=')
+                                            //parent key added to child key
+                                            //as '<parent key>/'
+
+std::string GetHomeDir();

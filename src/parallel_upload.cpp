@@ -45,8 +45,8 @@
 
 #include "lyra/lyra.hpp"
 #include "response_parser.h"
-#include "webclient.h"
 #include "utility.h"
+#include "webclient.h"
 
 using namespace std;
 using namespace filesystem;
@@ -60,6 +60,7 @@ struct Args {
     string bucket;
     string key;
     string file;
+    string credentials;
     int jobs = 1;
 };
 
@@ -109,6 +110,10 @@ string BuildEndUploadXML(vector<future<string>>& etags) {
         "<CompleteMultipartUpload "
         "xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">\n";
     for (int i = 0; i != etags.size(); ++i) {
+        if (!etags[i].valid()) {
+            throw runtime_error("Error - request " + to_string(i));
+            return "";
+        }
         const string part = "<Part><ETag>" + etags[i].get() +
                             "</ETag><PartNumber>" + to_string(i + 1) +
                             "</PartNumber></Part>";
@@ -132,14 +137,10 @@ WebRequest BuildEndUploadRequest(const Args& args, const string& path,
     return req;
 }
 
-string UploadPart(const Args& args, const string& path, int i,
-                  const string& uploadId, size_t chunkSize,
-                  size_t lastChunkSize) {
+string UploadPart(const Args& args, const string& path, const string& uploadId,
+                  int i, size_t offset, size_t chunkSize) {
     WebRequest ul = BuildUploadRequest(args, path, i, uploadId);
-    const size_t offset = chunkSize * i;
-    const size_t size = i != args.jobs - 1 ? chunkSize : lastChunkSize;
-    cout << "sending part " << i + 1 << " of " << args.jobs << endl;
-    const bool ok = ul.UploadFile(args.file, offset, size);
+    const bool ok = ul.UploadFile(args.file, offset, chunkSize);
     if (!ok) {
         throw(runtime_error("Cannot upload chunk " + to_string(i + 1)));
     }
@@ -151,6 +152,17 @@ string UploadPart(const Args& args, const string& path, int i,
     }
     return etag;
 }
+
+void InitArgs(Args& args) {
+    if (!args.s3AccessKey.empty() && !args.s3SecretKey.empty()) return;
+    const string fname = args.credentials.empty()
+                             ? GetHomeDir() + "/.aws/credentials"
+                             : args.credentials;
+    Toml toml = ParseTomlFile(fname);  // only default profile supported
+    args.s3AccessKey = toml["default"]["aws_access_key_id"];
+    args.s3SecretKey = toml["default"]["aws_secret_access_key"];
+}
+
 //------------------------------------------------------------------------------
 int main(int argc, char const* argv[]) {
     try {
@@ -173,7 +185,13 @@ int main(int argc, char const* argv[]) {
                 .required() |
             lyra::opt(args.jobs, "parallel jobs")["-j"]["--jobs"](
                 "Number inputFile parallel jobs")
+                .optional() |
+            lyra::opt(args.credentials,
+                      "credentials file")["-c"]["--credentials"](
+                "Credentials file, AWS cli format")
                 .optional();
+
+        InitArgs(args);
 
         // Parse the program arguments:
         auto result = cli.parse({argc, argv});
@@ -206,6 +224,16 @@ int main(int argc, char const* argv[]) {
             WebRequest req(args.endpoint, path, "POST", {{"uploads=", ""}},
                            headers);
             req.Send();
+            if (!req.Send()) {
+                throw runtime_error("Error sending request: " + req.ErrorMsg());
+            }
+            if (req.StatusCode() >= 400) {
+                vector<uint8_t> resp2 = req.GetContent();
+                const string xml2(begin(resp2), end(resp2));
+                const string errcode = XMLTag(xml2, "[Cc]ode");
+                throw runtime_error("Error sending begin upload request - " +
+                                    errcode);
+            }
             vector<uint8_t> resp = req.GetContent();
             const string xml(begin(resp), end(resp));
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
@@ -215,13 +243,30 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error(string("cannot open file ") + args.file);
             }
             fclose(inputFile);
-            for (int i = 0; i != args.jobs; ++i) {
-                etags[i] = async(launch::async, UploadPart, args, path, i,
-                                 uploadId, chunkSize, lastChunkSize);
+            if (fileSize % args.jobs == 0) {
+                for (int i = 0; i != args.jobs; ++i) {
+                    etags[i] = async(launch::async, UploadPart, args, path,
+                                     uploadId, i, chunkSize * i, chunkSize);
+                }
+            } else {
+                for (int i = 0; i != args.jobs - 1; ++i) {
+                    etags[i] = async(launch::async, UploadPart, args, path,
+                                     uploadId, i, chunkSize * i, chunkSize);
+                }
+                for (int j = 0; j != args.jobs - 1; ++j) {
+                    etags[j].wait();
+                }
+                const size_t offset = chunkSize * (args.jobs - 1);
+                const int idx = args.jobs - 1;
+                etags[args.jobs - 1] =
+                    async(launch::async, UploadPart, args, path, uploadId, idx,
+                          offset, lastChunkSize);
             }
             WebRequest endUpload =
                 BuildEndUploadRequest(args, path, etags, uploadId);
-            endUpload.Send();
+            if (!endUpload.Send()) {
+                throw runtime_error("Error sending request: " + req.ErrorMsg());
+            }
             if (endUpload.StatusCode() >= 400) {
                 vector<uint8_t> resp2 = endUpload.GetContent();
                 const string xml2(begin(resp2), end(resp2));
@@ -240,7 +285,9 @@ int main(int argc, char const* argv[]) {
             map<string, string> headers(begin(signedHeaders),
                                         end(signedHeaders));
             WebRequest req(args.endpoint, path, "PUT", {}, headers);
-            req.UploadFile(args.file);
+            if (!req.UploadFile(args.file)) {
+                throw runtime_error("Error sending request: " + req.ErrorMsg());
+            }
             if (req.StatusCode() >= 400) {
                 vector<uint8_t> resp2 = req.GetContent();
                 const string xml2(begin(resp2), end(resp2));
@@ -248,9 +295,9 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error("Error sending end unpload request - " +
                                     errcode);
             }
-            vector<uint8_t> resp2 = req.GetContent();
-            const string xml2(begin(resp2), end(resp2));
-            const string etag = XMLTag(xml2, "[Ee][Tt]ag");
+            vector<uint8_t> hh = req.GetHeader();
+            const string hhs(begin(hh), end(hh));
+            const string etag = HTTPHeader(hhs, "[Ee][Tt]ag");
             cout << etag << endl;
         }
         return 0;

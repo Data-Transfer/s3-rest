@@ -42,7 +42,15 @@
   #include <filesystem>
 #endif
 
-#include <string>
+#include <unistd.h>
+#include <sys/types.h>
+#include <pwd.h>
+
+#include <fstream>
+#include <iostream>
+#include <regex>
+
+#include "utility.h"
 
 size_t FileSize(const std::string& filename) {
 #ifdef __GNUC__
@@ -56,4 +64,77 @@ size_t FileSize(const std::string& filename) {
 #else
     return std::filesystem::file_size(filename);
 #endif
+}
+
+
+std::string GetHomeDir() {
+  struct passwd *pw = getpwuid(getuid());
+  return pw->pw_dir;
+}
+
+
+using namespace std;
+
+namespace {
+void Trim(string& s) {
+    auto i = s.find("#");
+    if (i != string::npos) s.erase(i);
+    i = s.find_last_not_of(" \r\n\t");
+    if(i != string::npos) s.erase(++i);
+}
+}  // namespace
+
+Toml ParseTomlFile(const string& filename) {
+    ifstream is(filename);
+    if (!is) {
+        throw std::invalid_argument("Cannot open file " + filename);
+        return {};
+    }
+    string line;
+    const string section = "^\\s*\\[\\s*([^\\]]+)\\]\\s*$";
+    int lineCount = 0;
+    string curSection;
+    Toml toml;
+    Dict curSectionData;
+    string lastKey;
+    while (getline(is, line)) {
+        ++lineCount;
+        if (line.size() == 0 || regex_search(line, regex{"^\\s*#"})) {
+            continue;
+        }
+        smatch sm;
+        if (regex_search(line, sm, regex{section})) {
+            if (curSection.size() != 0) {
+                toml[curSection] = curSectionData;
+                curSectionData.clear();
+                lastKey.clear();
+            }
+            curSection = sm[1];
+        } else {
+            smatch sm;
+            if (regex_search(line, sm, regex{"\\s*(\\w+)\\s*=\\s*(.*)"})) {
+                string value = sm[2];
+                Trim(value);
+                string keyPrefix = "";
+                if(!lastKey.empty() && curSectionData[lastKey].empty()) {
+                  keyPrefix = lastKey + "/";
+                }
+                curSectionData[keyPrefix + string(sm[1])] = value;
+                lastKey = sm[1];
+            } else {
+                if (lastKey.empty()) {
+                    throw std::runtime_error("Toml parsing error, line " +
+                                             to_string(lineCount));
+                }
+                if (line.size() == 0) continue;
+                Trim(line);
+                curSectionData[lastKey] += line;
+            }
+        }
+    }
+    if (toml.find(curSection) == toml.end()) {
+        toml[curSection] = curSectionData;
+    }
+
+    return toml;
 }
