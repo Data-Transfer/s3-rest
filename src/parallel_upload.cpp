@@ -71,6 +71,16 @@ void Validate(const Config& config) {
         throw invalid_argument(
             "ERROR: both access and secret keys have to be specified");
     }
+    if (config.jobs < 1) {
+        throw invalid_argument(
+            "ERROR: number of jobs must be greater than one, " +
+            to_string(config.jobs) + " provided");
+    }
+    if (config.maxRetries < 1) {
+        throw invalid_argument(
+            "ERROR: number of retries must be greater than one, " +
+            to_string(config.maxRetries) + " provided");
+    }
 #ifdef VALIDATE_URL
     const URL url = ParseURL(config.endpoint);
     if (url.proto != "http" && url.proto != "https") {
@@ -169,6 +179,10 @@ void InitConfig(Config& config) {
     config.awsProfile =
         config.awsProfile.empty() ? "default" : config.awsProfile;
     Toml toml = ParseTomlFile(fname);  // only default profile supported
+    if (toml.find(config.awsProfile) == toml.end()) {
+        throw invalid_argument("ERROR: profile " + config.awsProfile +
+                               " not found");
+    }
     config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
     config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
 }
@@ -204,6 +218,9 @@ int main(int argc, char const* argv[]) {
             lyra::opt(config.awsProfile,
                       "AWS config profile")["-p"]["--profile"](
                 "Profile in AWS config file")
+                .optional() |
+            lyra::opt(config.maxRetries, "Max retries")["-r"]["--retries"](
+                "Max number of per-multipart part retries")
                 .optional();
 
         InitConfig(config);
@@ -311,7 +328,7 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error("Error sending upload request");
             }
         }
-        if(numRetriesG > 0) cout << "Num retries: " << numRetriesG << endl;
+        if (numRetriesG > 0) cout << "Num retries: " << numRetriesG << endl;
         return 0;
     } catch (const exception& e) {
         cerr << e.what() << endl;
