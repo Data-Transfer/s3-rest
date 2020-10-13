@@ -146,9 +146,7 @@ string UploadPart(const Config& config, const string& path,
     if (!ok) {
         throw(runtime_error("Cannot upload chunk " + to_string(i + 1)));
     }
-    const vector<uint8_t> h = ul.GetHeader();
-    const string hs(begin(h), end(h));
-    const string etag = HTTPHeader(hs, "[Ee][Tt]ag");
+    const string etag = HTTPHeader(ul.GetHeaderText(), "[Ee][Tt]ag");
     if (etag.empty()) {
         throw(runtime_error("No ETag found in HTTP header"));
     }
@@ -242,9 +240,7 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }
             if (req.StatusCode() >= 400) {
-                vector<uint8_t> resp = req.GetContent();
-                const string xml(begin(resp), end(resp));
-                const string errcode = XMLTag(xml, "[Cc]ode");
+                const string errcode = XMLTag(req.GetContentText(), "[Cc]ode");
                 throw runtime_error("Error sending begin upload request - " +
                                     errcode);
             }
@@ -278,15 +274,11 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }
             if (endUpload.StatusCode() >= 400) {
-                vector<uint8_t> resp = endUpload.GetContent();
-                const string xml(begin(resp), end(resp));
-                const string errcode = XMLTag(xml, "[Cc]ode");
+                const string errcode = XMLTag(endUpload.GetContentText(), "[Cc]ode");
                 throw runtime_error("Error sending end unpload request - " +
                                     errcode);
             }
-            vector<uint8_t> resp2 = endUpload.GetContent();
-            const string xml2(begin(resp2), end(resp2));
-            const string etag = XMLTag(xml2, "[Ee][Tt]ag");
+            const string etag = XMLTag(endUpload.GetContentText(), "[Ee][Tt]ag");
             if(etag.empty()) {
                 cerr << "Error sending end upload request" << endl;
             }
@@ -302,15 +294,11 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }
             if (req.StatusCode() >= 400) {
-                vector<uint8_t> resp = req.GetContent();
-                const string xml(begin(resp), end(resp));
-                const string errcode = XMLTag(xml, "[Cc]ode");
+                const string errcode = XMLTag(req.GetContentText(), "[Cc]ode");
                 throw runtime_error("Error sending end unpload request - " +
                                     errcode);
             }
-            vector<uint8_t> hh = req.GetHeader();
-            const string hhs(begin(hh), end(hh));
-            const string etag = HTTPHeader(hhs, "[Ee][Tt]ag");
+            const string etag = HTTPHeader(req.GetHeaderText(), "[Ee][Tt]ag");
             cout << etag << endl;
             if(etag.empty()) {
                 cerr << "Error sending upload request" << endl;

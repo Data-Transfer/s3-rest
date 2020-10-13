@@ -40,12 +40,12 @@
 #include <atomic>
 #include <cassert>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <iostream>
 
 #include "url_utility.h"
 #include "utility.h"
@@ -219,7 +219,7 @@ class WebRequest {
         readBuffer_.data = data;
         readBuffer_.offset = 0;
     }
-    
+
     bool UploadFile(const std::string& fname) {
         struct stat st;
         const size_t size = FileSize(fname);
@@ -233,13 +233,13 @@ class WebRequest {
 
     bool UploadFile(const std::string& fname, size_t offset, size_t size) {
         FILE* file = fopen(fname.c_str(), "rb");
-        if(!file) {
+        if (!file) {
             throw std::runtime_error("Cannot open file " + fname);
         }
-        if(fseek(file, offset, SEEK_SET)) {
+        if (fseek(file, offset, SEEK_SET)) {
             throw std::runtime_error("Cannot move file pointer");
         }
-        if(!SetReadFunction(ReadFile, file)) {
+        if (!SetReadFunction(ReadFile, file)) {
             throw std::runtime_error("Cannot set read function");
         }
         SetMethod("PUT", size);
@@ -255,6 +255,20 @@ class WebRequest {
     }
     CURLcode GetInfo(CURLINFO info, va_list argp) {
         return curl_easy_getinfo(curl_, info, argp);
+    }
+
+    void SetVerbose(bool verbose) {
+        curl_easy_setopt(curl_, CURLOPT_VERBOSE, verbose ? 1L : 0);
+    }
+
+    std::string GetContentText() const {
+        std::vector<uint8_t> content = GetContent();
+        return std::string(begin(content), end(content));
+    }
+
+    std::string GetHeaderText() const {
+        std::vector<uint8_t> header = GetHeader();
+        return std::string(begin(header), end(header));
     }
 
    private:
@@ -319,7 +333,6 @@ class WebRequest {
         if (!endpoint_.empty()) {
             BuildURL();
         }
-        curl_easy_setopt(curl_, CURLOPT_VERBOSE, 1L);
         return true;
     handle_error:
         throw(std::runtime_error(errorBuffer_.data()));
