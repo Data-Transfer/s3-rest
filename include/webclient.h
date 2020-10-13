@@ -244,7 +244,10 @@ class WebRequest {
         }
         SetMethod("PUT", size);
         const bool result = Send();
-        std::cout << ErrorMsg() << std::endl;
+        if(!result) {
+            throw std::runtime_error("Erro sending request: " + ErrorMsg());
+            fclose(file);
+        }
         fclose(file);
         return result;
     }
