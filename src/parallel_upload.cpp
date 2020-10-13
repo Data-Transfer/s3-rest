@@ -36,11 +36,11 @@
 
 #include <aws_sign.h>
 
-#include <filesystem>
 #include <future>
 #include <iostream>
 #include <regex>
 #include <set>
+#include <stdexcept>
 #include <vector>
 
 #include "lyra/lyra.hpp"
@@ -49,7 +49,6 @@
 #include "webclient.h"
 
 using namespace std;
-using namespace filesystem;
 
 //------------------------------------------------------------------------------
 struct Config {
@@ -62,6 +61,7 @@ struct Config {
     string file;
     string credentials;
     string awsProfile;
+    int maxRetries = 2;
     int jobs = 1;
 };
 
@@ -92,6 +92,8 @@ void Validate(const Config& config) {
 
 using Headers = map<string, string>;
 using Parameters = map<string, string>;
+
+atomic<int> numRetriesG{0};
 
 WebRequest BuildUploadRequest(const Config& config, const string& path,
                               int partNum, const string& uploadId) {
@@ -140,7 +142,7 @@ WebRequest BuildEndUploadRequest(const Config& config, const string& path,
 
 string UploadPart(const Config& config, const string& path,
                   const string& uploadId, int i, size_t offset,
-                  size_t chunkSize) {
+                  size_t chunkSize, int tryNum = 1, int maxTries = 1) {
     WebRequest ul = BuildUploadRequest(config, path, i, uploadId);
     const bool ok = ul.UploadFile(config.file, offset, chunkSize);
     if (!ok) {
@@ -148,7 +150,13 @@ string UploadPart(const Config& config, const string& path,
     }
     const string etag = HTTPHeader(ul.GetHeaderText(), "[Ee][Tt]ag");
     if (etag.empty()) {
-        throw(runtime_error("No ETag found in HTTP header"));
+        if (tryNum == maxTries) {
+            throw(runtime_error("No ETag found in HTTP header"));
+        } else {
+            numRetriesG += 1;
+            return UploadPart(config, path, uploadId, i, offset, chunkSize,
+                              ++tryNum, maxTries);
+        }
     }
     return etag;
 }
@@ -249,25 +257,18 @@ int main(int argc, char const* argv[]) {
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
             vector<future<string>> etags(config.jobs);
 
-            if (fileSize % config.jobs == 0) {
-                for (int i = 0; i != config.jobs; ++i) {
+            for (int i = 0; i != config.jobs; ++i) {
+                if (i != config.jobs - 1) {
                     etags[i] = async(launch::async, UploadPart, config, path,
-                                     uploadId, i, chunkSize * i, chunkSize);
-                }
-            } else {
-                for (int i = 0; i != config.jobs - 1; ++i) {
+                                     uploadId, i, chunkSize * i, chunkSize, 1,
+                                     config.maxRetries);
+                } else {
                     etags[i] = async(launch::async, UploadPart, config, path,
-                                     uploadId, i, chunkSize * i, chunkSize);
+                                     uploadId, i, chunkSize * i, lastChunkSize,
+                                     1, config.maxRetries);
                 }
-                for (int j = 0; j != config.jobs - 1; ++j) {
-                    etags[j].wait();
-                }
-                const size_t offset = chunkSize * (config.jobs - 1);
-                const int idx = config.jobs - 1;
-                etags[config.jobs - 1] =
-                    async(launch::async, UploadPart, config, path, uploadId,
-                          idx, offset, lastChunkSize);
             }
+
             WebRequest endUpload =
                 BuildEndUploadRequest(config, path, etags, uploadId);
             if (!endUpload.Send()) {
@@ -301,11 +302,16 @@ int main(int argc, char const* argv[]) {
                                     errcode);
             }
             const string etag = HTTPHeader(req.GetHeaderText(), "[Ee][Tt]ag");
-            cout << etag << endl;
+            if (etag[0] == '"') {
+                cout << etag.substr(1, etag.size() - 2);
+            } else {
+                cout << etag << endl;
+            }
             if (etag.empty()) {
-                cerr << "Error sending upload request" << endl;
+                throw runtime_error("Error sending upload request");
             }
         }
+        if(numRetriesG > 0) cout << "Num retries: " << numRetriesG << endl;
         return 0;
     } catch (const exception& e) {
         cerr << e.what() << endl;

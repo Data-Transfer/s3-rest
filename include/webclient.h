@@ -40,15 +40,19 @@
 #include <atomic>
 #include <cassert>
 #include <fstream>
-#include <iostream>
 #include <map>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#ifdef IGNORE_SIGPIPE
+#include <signal.h>
+#endif
 
 #include "url_utility.h"
 #include "utility.h"
+
+
 
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata);
 
@@ -111,13 +115,9 @@ class WebRequest {
         }
     }
     bool Send() {
-        const bool ok = curl_easy_perform(curl_) == CURLE_OK;
-        if (ok) {
-            curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &responseCode_);
-        } else {
-            responseCode_ = 0;
-        }
-        return ok;
+        const bool ret = Status(curl_easy_perform(curl_));
+        curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &responseCode_);
+        return ret;
     }
     bool SetUrl(const std::string& url) {
         url_ = url;
@@ -240,6 +240,10 @@ class WebRequest {
     }
 
     bool UploadFile(const std::string& fname, size_t offset, size_t size) {
+#ifdef IGNORE_SIGPIPE
+        signal(SIGPIPE, SIG_IGN);
+        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
+#endif
         FILE* file = fopen(fname.c_str(), "rb");
         if (!file) {
             throw std::runtime_error("Cannot open file " + fname);
@@ -283,6 +287,16 @@ class WebRequest {
     }
 
    private:
+    bool Status(CURLcode cc) const {
+        if(cc == 0) return true;
+        //deal with SIGPIPE
+        if(cc == CURLE_SEND_ERROR) {
+            const std::string err(begin(errorBuffer_), end(errorBuffer_));
+            if(err.find("pipe") != std::string::npos) return true;
+        }
+        return false;
+
+    }
     void InitEnv() {
         // first thread initializes curl the others wait until
         // initialization is complete
@@ -344,7 +358,6 @@ class WebRequest {
         if (!endpoint_.empty()) {
             BuildURL();
         }
-        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 0L);
         return true;
     handle_error:
         throw(std::runtime_error(errorBuffer_.data()));

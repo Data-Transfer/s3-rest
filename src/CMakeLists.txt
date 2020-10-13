@@ -36,4 +36,4 @@ target_link_libraries("s3-download" ${LIBRARIES})
 target_link_libraries("s3-download" curl)
 target_link_libraries("s3-download" ${CMAKE_THREAD_LIBS_INIT})
 
-#add_compile_definitions(...)
+add_compile_definitions(IGNORE_SIGPIPE)
