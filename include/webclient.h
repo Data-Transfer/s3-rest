@@ -221,12 +221,20 @@ class WebRequest {
     }
 
     bool UploadFile(const std::string& fname) {
-        struct stat st;
         const size_t size = FileSize(fname);
         FILE* file = fopen(fname.c_str(), "rb");
-        SetReadFunction(NULL, file);
+        if (!file) {
+            throw std::runtime_error("Cannot open file " + fname);
+        }
+        if (!SetReadFunction(NULL, file)) {
+            throw std::runtime_error("Cannot set read function");
+        }
         SetMethod("PUT", size);
         const bool result = Send();
+        if(!result) {
+            throw std::runtime_error("Error sending request: " + ErrorMsg());
+            fclose(file);
+        }
         fclose(file);
         return result;
     }
@@ -245,7 +253,7 @@ class WebRequest {
         SetMethod("PUT", size);
         const bool result = Send();
         if(!result) {
-            throw std::runtime_error("Erro sending request: " + ErrorMsg());
+            throw std::runtime_error("Error sending request: " + ErrorMsg());
             fclose(file);
         }
         fclose(file);
@@ -336,6 +344,7 @@ class WebRequest {
         if (!endpoint_.empty()) {
             BuildURL();
         }
+        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 0L);
         return true;
     handle_error:
         throw(std::runtime_error(errorBuffer_.data()));

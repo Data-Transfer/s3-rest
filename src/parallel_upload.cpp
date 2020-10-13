@@ -274,12 +274,14 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }
             if (endUpload.StatusCode() >= 400) {
-                const string errcode = XMLTag(endUpload.GetContentText(), "[Cc]ode");
+                const string errcode =
+                    XMLTag(endUpload.GetContentText(), "[Cc]ode");
                 throw runtime_error("Error sending end unpload request - " +
                                     errcode);
             }
-            const string etag = XMLTag(endUpload.GetContentText(), "[Ee][Tt]ag");
-            if(etag.empty()) {
+            const string etag =
+                XMLTag(endUpload.GetContentText(), "[Ee][Tt]ag");
+            if (etag.empty()) {
                 cerr << "Error sending end upload request" << endl;
             }
             cout << etag << endl;
@@ -300,7 +302,7 @@ int main(int argc, char const* argv[]) {
             }
             const string etag = HTTPHeader(req.GetHeaderText(), "[Ee][Tt]ag");
             cout << etag << endl;
-            if(etag.empty()) {
+            if (etag.empty()) {
                 cerr << "Error sending upload request" << endl;
             }
         }
