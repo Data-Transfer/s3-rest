@@ -405,10 +405,7 @@ class WebRequest {
     long responseCode_ = 0;              // CURL uses a long type for status
     std::string urlEncodedPostData_;
     Buffer readBuffer_;
-
    private:
-    enum InitState { UNINITIALIZED = 0, INITIALIZED = 1 };
-    static std::atomic<InitState> globalInit_;
     static std::atomic<int> numInstances_;
     static std::mutex cleanupMutex_;
 };
