@@ -110,7 +110,7 @@ using Parameters = map<string, string>;
 atomic<int> numRetriesG{0};
 
 WebClient BuildUploadRequest(const Config& config, const string& path,
-                              int partNum, const string& uploadId) {
+                             int partNum, const string& uploadId) {
     Parameters params = {{"partNumber", to_string(partNum + 1)},
                          {"uploadId", uploadId}};
     auto signedHeaders =
@@ -141,8 +141,8 @@ string BuildEndUploadXML(vector<future<string>>& etags) {
 }
 
 WebClient BuildEndUploadRequest(const Config& config, const string& path,
-                                 vector<future<string>>& etags,
-                                 const string& uploadId) {
+                                vector<future<string>>& etags,
+                                const string& uploadId) {
     Parameters params = {{"uploadId", uploadId}};
     auto signedHeaders =
         SignHeaders(config.s3AccessKey, config.s3SecretKey, config.endpoint,
@@ -181,7 +181,8 @@ string UploadPartMem(const char* src, const Config& config, const string& path,
     WebClient ul = BuildUploadRequest(config, path, i, uploadId);
     const bool ok = ul.UploadFileFromBuffer(src, offset, chunkSize);
     if (!ok) {
-        throw(runtime_error("Cannot upload chunk " + to_string(i + 1) + " " + ul.ErrorMsg()));
+        throw(runtime_error("Cannot upload chunk " + to_string(i + 1) + " " +
+                            ul.ErrorMsg()));
     }
     const string etag = HTTPHeader(ul.GetHeaderText(), "[Ee][Tt]ag");
     if (etag.empty()) {
@@ -247,8 +248,8 @@ int main(int argc, char const* argv[]) {
             lyra::opt(config.maxRetries, "Max retries")["-r"]["--retries"](
                 "Max number of per-multipart part retries")
                 .optional() |
-            lyra::opt(
-                config.memoryMapped)["-m"]["--mmap"]("Use memory mapped files")
+            lyra::opt(config.memoryMapped)["-m"]["--mmap"](
+                "Use memory mapped files")
                 .optional();
 
         InitConfig(config);
@@ -288,7 +289,7 @@ int main(int argc, char const* argv[]) {
             map<string, string> headers(begin(signedHeaders),
                                         end(signedHeaders));
             WebClient req(config.endpoint, path, "POST", {{"uploads=", ""}},
-                           headers);
+                          headers);
             if (!req.Send()) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }
@@ -306,8 +307,8 @@ int main(int argc, char const* argv[]) {
             if (config.memoryMapped) {
                 fin = open(config.file.c_str(), O_RDONLY | O_LARGEFILE);
                 if (fin < 0) throw runtime_error("Cannot open input file");
-                src = (char*) mmap(NULL, fileSize, PROT_READ,
-                                                    MAP_PRIVATE, fin, 0);
+                src =
+                    (char*)mmap(NULL, fileSize, PROT_READ, MAP_PRIVATE, fin, 0);
                 if (src == MAP_FAILED) runtime_error("Cannot map input file");
                 for (int i = 0; i != config.jobs; ++i) {
                     if (i != config.jobs - 1) {
