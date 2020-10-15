@@ -151,7 +151,7 @@ int main(int argc, char const* argv[]) {
                 args.bucket, args.key, "", params, headers);
             headers.insert(begin(signedHeaders), end(signedHeaders));
         }
-        WebRequest req(args.endpoint, path, args.method, params, headers);
+        WebClient req(args.endpoint, path, args.method, params, headers);
         FILE* of = NULL;
         if (!args.outfile.empty()) {
             of = fopen(args.outfile.c_str(), "wb");

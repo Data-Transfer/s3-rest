@@ -35,6 +35,9 @@
 // Parallel file upload to S3 servers
 
 #include <aws_sign.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include <future>
 #include <iostream>
@@ -63,6 +66,7 @@ struct Config {
     string awsProfile;
     int maxRetries = 2;
     int jobs = 1;
+    bool memoryMapped = false;
 };
 
 void Validate(const Config& config) {
@@ -105,7 +109,7 @@ using Parameters = map<string, string>;
 
 atomic<int> numRetriesG{0};
 
-WebRequest BuildUploadRequest(const Config& config, const string& path,
+WebClient BuildUploadRequest(const Config& config, const string& path,
                               int partNum, const string& uploadId) {
     Parameters params = {{"partNumber", to_string(partNum + 1)},
                          {"uploadId", uploadId}};
@@ -113,7 +117,7 @@ WebRequest BuildUploadRequest(const Config& config, const string& path,
         SignHeaders(config.s3AccessKey, config.s3SecretKey, config.endpoint,
                     "PUT", config.bucket, config.key, "", params);
     Headers headers(begin(signedHeaders), end(signedHeaders));
-    WebRequest req(config.endpoint, path, "PUT", params, headers);
+    WebClient req(config.endpoint, path, "PUT", params, headers);
     return req;
 }
 
@@ -136,7 +140,7 @@ string BuildEndUploadXML(vector<future<string>>& etags) {
     return xml;
 }
 
-WebRequest BuildEndUploadRequest(const Config& config, const string& path,
+WebClient BuildEndUploadRequest(const Config& config, const string& path,
                                  vector<future<string>>& etags,
                                  const string& uploadId) {
     Parameters params = {{"uploadId", uploadId}};
@@ -144,7 +148,7 @@ WebRequest BuildEndUploadRequest(const Config& config, const string& path,
         SignHeaders(config.s3AccessKey, config.s3SecretKey, config.endpoint,
                     "POST", config.bucket, config.key, "", params);
     Headers headers(begin(signedHeaders), end(signedHeaders));
-    WebRequest req(config.endpoint, path, "POST", params, headers);
+    WebClient req(config.endpoint, path, "POST", params, headers);
     req.SetMethod("POST");
     req.SetPostData(BuildEndUploadXML(etags));
     return req;
@@ -153,10 +157,31 @@ WebRequest BuildEndUploadRequest(const Config& config, const string& path,
 string UploadPart(const Config& config, const string& path,
                   const string& uploadId, int i, size_t offset,
                   size_t chunkSize, int tryNum = 1, int maxTries = 1) {
-    WebRequest ul = BuildUploadRequest(config, path, i, uploadId);
+    WebClient ul = BuildUploadRequest(config, path, i, uploadId);
     const bool ok = ul.UploadFile(config.file, offset, chunkSize);
     if (!ok) {
         throw(runtime_error("Cannot upload chunk " + to_string(i + 1)));
+    }
+    const string etag = HTTPHeader(ul.GetHeaderText(), "[Ee][Tt]ag");
+    if (etag.empty()) {
+        if (tryNum == maxTries) {
+            throw(runtime_error("No ETag found in HTTP header"));
+        } else {
+            numRetriesG += 1;
+            return UploadPart(config, path, uploadId, i, offset, chunkSize,
+                              ++tryNum, maxTries);
+        }
+    }
+    return etag;
+}
+
+string UploadPartMem(const char* src, const Config& config, const string& path,
+                     const string& uploadId, int i, size_t offset,
+                     size_t chunkSize, int tryNum = 1, int maxTries = 1) {
+    WebClient ul = BuildUploadRequest(config, path, i, uploadId);
+    const bool ok = ul.UploadFileFromBuffer(src, offset, chunkSize);
+    if (!ok) {
+        throw(runtime_error("Cannot upload chunk " + to_string(i + 1) + " " + ul.ErrorMsg()));
     }
     const string etag = HTTPHeader(ul.GetHeaderText(), "[Ee][Tt]ag");
     if (etag.empty()) {
@@ -221,6 +246,9 @@ int main(int argc, char const* argv[]) {
                 .optional() |
             lyra::opt(config.maxRetries, "Max retries")["-r"]["--retries"](
                 "Max number of per-multipart part retries")
+                .optional() |
+            lyra::opt(
+                config.memoryMapped)["-m"]["--mmap"]("Use memory mapped files")
                 .optional();
 
         InitConfig(config);
@@ -259,7 +287,7 @@ int main(int argc, char const* argv[]) {
                 config.bucket, config.key, "", {{"uploads=", ""}});
             map<string, string> headers(begin(signedHeaders),
                                         end(signedHeaders));
-            WebRequest req(config.endpoint, path, "POST", {{"uploads=", ""}},
+            WebClient req(config.endpoint, path, "POST", {{"uploads=", ""}},
                            headers);
             if (!req.Send()) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
@@ -273,21 +301,48 @@ int main(int argc, char const* argv[]) {
             const string xml(begin(resp), end(resp));
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
             vector<future<string>> etags(config.jobs);
-
-            for (int i = 0; i != config.jobs; ++i) {
-                if (i != config.jobs - 1) {
-                    etags[i] = async(launch::async, UploadPart, config, path,
-                                     uploadId, i, chunkSize * i, chunkSize, 1,
-                                     config.maxRetries);
-                } else {
-                    etags[i] = async(launch::async, UploadPart, config, path,
-                                     uploadId, i, chunkSize * i, lastChunkSize,
-                                     1, config.maxRetries);
+            int fin = -1;
+            char* src = nullptr;
+            if (config.memoryMapped) {
+                fin = open(config.file.c_str(), O_RDONLY | O_LARGEFILE);
+                if (fin < 0) throw runtime_error("Cannot open input file");
+                src = (char*) mmap(NULL, fileSize, PROT_READ,
+                                                    MAP_PRIVATE, fin, 0);
+                if (src == MAP_FAILED) runtime_error("Cannot map input file");
+                for (int i = 0; i != config.jobs; ++i) {
+                    if (i != config.jobs - 1) {
+                        etags[i] =
+                            async(launch::async, UploadPartMem, src, config,
+                                  path, uploadId, i, chunkSize * i, chunkSize,
+                                  1, config.maxRetries);
+                    } else {
+                        etags[i] =
+                            async(launch::async, UploadPartMem, src, config,
+                                  path, uploadId, i, chunkSize * i,
+                                  lastChunkSize, 1, config.maxRetries);
+                    }
+                }
+            } else {
+                for (int i = 0; i != config.jobs; ++i) {
+                    if (i != config.jobs - 1) {
+                        etags[i] = async(launch::async, UploadPart, config,
+                                         path, uploadId, i, chunkSize * i,
+                                         chunkSize, 1, config.maxRetries);
+                    } else {
+                        etags[i] = async(launch::async, UploadPart, config,
+                                         path, uploadId, i, chunkSize * i,
+                                         lastChunkSize, 1, config.maxRetries);
+                    }
                 }
             }
 
-            WebRequest endUpload =
+            WebClient endUpload =
                 BuildEndUploadRequest(config, path, etags, uploadId);
+            if (config.memoryMapped) {
+                if (munmap(src, fileSize))
+                    throw runtime_error("Cannot unmap output file");
+                if (close(fin)) throw runtime_error("Error closing input file");
+            }
             if (!endUpload.Send()) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }
@@ -309,7 +364,7 @@ int main(int argc, char const* argv[]) {
                 config.bucket, config.key, "");
             map<string, string> headers(begin(signedHeaders),
                                         end(signedHeaders));
-            WebRequest req(config.endpoint, path, "PUT", {}, headers);
+            WebClient req(config.endpoint, path, "PUT", {}, headers);
             if (!req.UploadFile(config.file)) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }

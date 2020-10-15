@@ -97,7 +97,7 @@ size_t ObjectSize(const Args& args, const string& path) {
         SignHeaders(args.s3AccessKey, args.s3SecretKey, args.endpoint, "HEAD",
                     args.bucket, args.key);
     Headers headers(begin(signedHeaders), end(signedHeaders));
-    WebRequest req(args.endpoint, path, "HEAD", {}, headers);
+    WebClient req(args.endpoint, path, "HEAD", {}, headers);
     req.Send();
     const vector<uint8_t> h = req.GetHeader();
     const string hs(begin(h), end(h));
@@ -116,7 +116,7 @@ int DownloadPart(const Args& args, const string& path, int id, size_t chunkSize,
     const string range = "bytes=" + to_string(id * chunkSize) + "-" +
                          to_string(id * chunkSize + sz - 1);
     headers.insert({"Range", range});
-    WebRequest req(args.endpoint, path, "GET", {}, headers);
+    WebClient req(args.endpoint, path, "GET", {}, headers);
     FILE* out = fopen(args.file.c_str(), "wb");
     fseek(out, id * chunkSize, SEEK_SET);
     req.SetWriteFunction(NULL, out);

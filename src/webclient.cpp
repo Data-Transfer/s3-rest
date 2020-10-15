@@ -32,8 +32,8 @@
  ******************************************************************************/
 #include <webclient.h>
 
-std::atomic<int> WebRequest::numInstances_{0};
-std::mutex WebRequest::cleanupMutex_;
+std::atomic<int> WebClient::numInstances_{0};
+std::mutex WebClient::cleanupMutex_;
 
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
     FILE* readhere = (FILE*) userdata;

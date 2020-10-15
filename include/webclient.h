@@ -52,13 +52,11 @@
 #include "url_utility.h"
 #include "utility.h"
 
-
-
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata);
 
 size_t WriteFile(char* data, size_t size, size_t nmemb, void* outbuffer);
 
-class WebRequest {
+class WebClient {
     using WriteFunction = size_t (*)(char* data, size_t size, size_t nmemb,
                                      void* writerData);
     using ReadFunction = size_t (*)(void* ptr, size_t size, size_t nmemb,
@@ -69,9 +67,14 @@ class WebRequest {
         std::vector<uint8_t> data;  // buffer
     };
 
+    struct ReadBuffer {
+        size_t offset = 0;  // pointer to next insertion point
+        const char* data;   // buffer
+    };
+
    public:
-    WebRequest(const WebRequest&) = delete;
-    WebRequest(WebRequest&& other)
+    WebClient(const WebClient&) = delete;
+    WebClient(WebClient&& other)
         : endpoint_(other.endpoint_),
           path_(other.path_),
           method_(other.method_),
@@ -82,11 +85,11 @@ class WebRequest {
           curl_(other.curl_) {
         other.curl_ = NULL;
     }
-    WebRequest() { InitEnv(); }
-    WebRequest(const std::string& url) : url_(url), method_("GET") {
+    WebClient() { InitEnv(); }
+    WebClient(const std::string& url) : url_(url), method_("GET") {
         InitEnv();
     }
-    WebRequest(const std::string& ep, const std::string& path,
+    WebClient(const std::string& ep, const std::string& path,
                const std::string& method = "GET",
                const std::map<std::string, std::string> params =
                    std::map<std::string, std::string>(),
@@ -99,7 +102,7 @@ class WebRequest {
           headers_(headers) {
         InitEnv();
     }
-    ~WebRequest() {
+    ~WebClient() {
         if (curlHeaderList_) {
             curl_slist_free_all(curlHeaderList_);
         }
@@ -231,12 +234,31 @@ class WebRequest {
         }
         SetMethod("PUT", size);
         const bool result = Send();
-        if(!result) {
+        if (!result) {
             throw std::runtime_error("Error sending request: " + ErrorMsg());
             fclose(file);
         }
         fclose(file);
         return result;
+    }
+
+    bool UploadFileFromBuffer(const char* data, size_t offset, size_t size) {
+#ifdef IGNORE_SIGPIPE
+        signal(SIGPIPE, SIG_IGN);
+        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
+#endif
+        if (curl_easy_setopt(curl_, CURLOPT_READFUNCTION, BufferReader) !=
+            CURLE_OK) {
+            throw std::runtime_error("Cannot set curl read function");
+        }
+        if (curl_easy_setopt(curl_, CURLOPT_READDATA, &refBuffer_) !=
+            CURLE_OK) {
+            throw std::runtime_error("Cannot set curl read data buffer");
+        }
+        refBuffer_.data = data;
+        refBuffer_.offset = offset;
+        SetMethod("PUT", size);
+        return Send();
     }
 
     bool UploadFile(const std::string& fname, size_t offset, size_t size) {
@@ -256,7 +278,7 @@ class WebRequest {
         }
         SetMethod("PUT", size);
         const bool result = Send();
-        if(!result) {
+        if (!result) {
             throw std::runtime_error("Error sending request: " + ErrorMsg());
             fclose(file);
         }
@@ -288,14 +310,13 @@ class WebRequest {
 
    private:
     bool Status(CURLcode cc) const {
-        if(cc == 0) return true;
-        //deal with SIGPIPE
-        if(cc == CURLE_SEND_ERROR) {
+        if (cc == 0) return true;
+        // deal with SIGPIPE
+        if (cc == CURLE_SEND_ERROR) {
             const std::string err(begin(errorBuffer_), end(errorBuffer_));
-            if(err.find("pipe") != std::string::npos) return true;
+            if (err.find("pipe") != std::string::npos) return true;
         }
         return false;
-
     }
     void InitEnv() {
         // first thread initializes curl the others wait until
@@ -400,6 +421,20 @@ class WebRequest {
         return size;
     }
 
+    static size_t BufferReader(void* ptr, size_t size, size_t nmemb,
+                               ReadBuffer* inbuffer) {
+        const auto b = inbuffer->data + inbuffer->offset;
+        if (b >= inbuffer->data + size) {
+            return 0;
+        }
+        size = size * nmemb;
+        const auto e = std::min(b + size, inbuffer->data);
+        std::copy(b, e, (char*)ptr);
+        size = size_t(e - b);
+        inbuffer->offset += size;
+        return size;
+    }
+
    private:
     CURL* curl_ = NULL;  // C pointer
     std::string url_;
@@ -418,6 +453,8 @@ class WebRequest {
     long responseCode_ = 0;              // CURL uses a long type for status
     std::string urlEncodedPostData_;
     Buffer readBuffer_;
+    ReadBuffer refBuffer_;
+
    private:
     static std::atomic<int> numInstances_;
     static std::mutex cleanupMutex_;
