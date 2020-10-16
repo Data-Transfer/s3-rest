@@ -66,7 +66,7 @@ struct Config {
     string awsProfile;
     int maxRetries = 2;
     int jobs = 1;
-    bool memoryMapped = false;
+    string memoryMapping = "none";
 };
 
 void Validate(const Config& config) {
@@ -248,8 +248,9 @@ int main(int argc, char const* argv[]) {
             lyra::opt(config.maxRetries, "Max retries")["-r"]["--retries"](
                 "Max number of per-multipart part retries")
                 .optional() |
-            lyra::opt(config.memoryMapped)["-m"]["--mmap"](
-                "Use memory mapped files")
+            lyra::opt(config.memoryMapping)["-m"]["--mmap"]
+                .choices("none", "map", "load")
+                .help("memory mapping, 'none', 'map', 'preload'")
                 .optional();
 
         InitConfig(config);
@@ -304,7 +305,7 @@ int main(int argc, char const* argv[]) {
             vector<future<string>> etags(config.jobs);
             int fin = -1;
             char* src = nullptr;
-            if (config.memoryMapped) {
+            if (config.memoryMapping == "map") {
                 fin = open(config.file.c_str(), O_RDONLY | O_LARGEFILE);
                 if (fin < 0) throw runtime_error("Cannot open input file");
                 src =
@@ -323,6 +324,31 @@ int main(int argc, char const* argv[]) {
                                   lastChunkSize, 1, config.maxRetries);
                     }
                 }
+            } else if(config.memoryMapping == "preload") {
+                FILE* f = fopen(config.file.c_str(), "rb");
+                if(!f) {
+                    throw runtime_error("Cannot open input file fore reading");
+                }
+                if (fin < 0) throw runtime_error("Cannot open input file");
+                vector<future<void>> loaders(config.jobs);
+                vector<char> buffer(FileSize(config.file));
+                fread(buffer.data(), buffer.size(), 1, f); //split into multiple paralle loads.
+                fclose(f);
+                for (int i = 0; i != config.jobs; ++i) {
+                    const size_t offset = chunkSize * i;
+                    if (i != config.jobs - 1) {
+                        etags[i] =
+                            async(launch::async, UploadPartMem, &buffer[0] + offset, config,
+                                  path, uploadId, i, chunkSize * i, chunkSize,
+                                  1, config.maxRetries);
+                    } else {
+                        etags[i] =
+                            async(launch::async, UploadPartMem, &buffer[0] + offset, config,
+                                  path, uploadId, i, chunkSize * i, lastChunkSize,
+                                  1, config.maxRetries);
+                    }
+                }
+            
             } else {
                 for (int i = 0; i != config.jobs; ++i) {
                     if (i != config.jobs - 1) {
@@ -339,7 +365,7 @@ int main(int argc, char const* argv[]) {
 
             WebClient endUpload =
                 BuildEndUploadRequest(config, path, etags, uploadId);
-            if (config.memoryMapped) {
+            if (config.memoryMapping == "map") {
                 if (munmap(src, fileSize))
                     throw runtime_error("Cannot unmap output file");
                 if (close(fin)) throw runtime_error("Error closing input file");
