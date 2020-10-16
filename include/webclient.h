@@ -70,6 +70,7 @@ class WebClient {
     struct ReadBuffer {
         size_t offset = 0;  // pointer to next insertion point
         const char* data;   // buffer
+        size_t size = 0;    // buffer size
     };
 
    public:
@@ -242,7 +243,7 @@ class WebClient {
         return result;
     }
 
-    bool UploadFileFromBuffer(const char* data, size_t offset, size_t size) {
+    bool UploadDataFromBuffer(const char* data, size_t offset, size_t size) {
 #ifdef IGNORE_SIGPIPE
         signal(SIGPIPE, SIG_IGN);
         curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
@@ -257,6 +258,7 @@ class WebClient {
         }
         refBuffer_.data = data;
         refBuffer_.offset = offset;
+        refBuffer_.size = size;
         SetMethod("PUT", size);
         return Send();
     }
@@ -424,11 +426,12 @@ class WebClient {
     static size_t BufferReader(void* ptr, size_t size, size_t nmemb,
                                ReadBuffer* inbuffer) {
         const auto b = inbuffer->data + inbuffer->offset;
-        if (b >= inbuffer->data + size) {
+        const auto end = inbuffer->data + inbuffer->offset + inbuffer->size;
+        if (b >= end) {
             return 0;
         }
         size = size * nmemb;
-        const auto e = std::min(b + size, inbuffer->data);
+        const auto e = std::min(b + size, end);
         std::copy(b, e, (char*)ptr);
         size = size_t(e - b);
         inbuffer->offset += size;

@@ -179,7 +179,7 @@ string UploadPartMem(const char* src, const Config& config, const string& path,
                      const string& uploadId, int i, size_t offset,
                      size_t chunkSize, int tryNum = 1, int maxTries = 1) {
     WebClient ul = BuildUploadRequest(config, path, i, uploadId);
-    const bool ok = ul.UploadFileFromBuffer(src, offset, chunkSize);
+    const bool ok = ul.UploadDataFromBuffer(src, offset, chunkSize);
     if (!ok) {
         throw(runtime_error("Cannot upload chunk " + to_string(i + 1) + " " +
                             ul.ErrorMsg()));
@@ -190,8 +190,8 @@ string UploadPartMem(const char* src, const Config& config, const string& path,
             throw(runtime_error("No ETag found in HTTP header"));
         } else {
             numRetriesG += 1;
-            return UploadPart(config, path, uploadId, i, offset, chunkSize,
-                              ++tryNum, maxTries);
+            return UploadPartMem(src, config, path, uploadId, i, offset,
+                                 chunkSize, ++tryNum, maxTries);
         }
     }
     return etag;
