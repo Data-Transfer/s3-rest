@@ -422,7 +422,6 @@ class WebClient {
         inbuffer->offset += size;
         return size;
     }
-
     static size_t BufferReader(void* ptr, size_t size, size_t nmemb,
                                ReadBuffer* inbuffer) {
         const auto b = inbuffer->data + inbuffer->offset;

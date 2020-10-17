@@ -39,6 +39,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <future>
 #include <iostream>
 #include <regex>
@@ -67,6 +68,10 @@ struct Config {
     int maxRetries = 2;
     int jobs = 1;
     string memoryMapping = "none";
+    // when pre-loading data the number of threads used to load data
+    // can be different from the number of threads used to send data
+    // int loadJobs = -1;
+    // int dataTransferJobs = -1;
 };
 
 void Validate(const Config& config) {
@@ -156,7 +161,7 @@ WebClient BuildEndUploadRequest(const Config& config, const string& path,
 
 string UploadPart(const Config& config, const string& path,
                   const string& uploadId, int i, size_t offset,
-                  size_t chunkSize, int tryNum = 1, int maxTries = 1) {
+                  size_t chunkSize, int maxTries = 1, int tryNum = 1) {
     WebClient ul = BuildUploadRequest(config, path, i, uploadId);
     const bool ok = ul.UploadFile(config.file, offset, chunkSize);
     if (!ok) {
@@ -169,7 +174,7 @@ string UploadPart(const Config& config, const string& path,
         } else {
             numRetriesG += 1;
             return UploadPart(config, path, uploadId, i, offset, chunkSize,
-                              ++tryNum, maxTries);
+                              maxTries, ++tryNum);
         }
     }
     return etag;
@@ -177,7 +182,7 @@ string UploadPart(const Config& config, const string& path,
 
 string UploadPartMem(const char* src, const Config& config, const string& path,
                      const string& uploadId, int i, size_t offset,
-                     size_t chunkSize, int tryNum = 1, int maxTries = 1) {
+                     size_t chunkSize, int maxTries = 1, int tryNum = 1) {
     WebClient ul = BuildUploadRequest(config, path, i, uploadId);
     const bool ok = ul.UploadDataFromBuffer(src, offset, chunkSize);
     if (!ok) {
@@ -191,7 +196,7 @@ string UploadPartMem(const char* src, const Config& config, const string& path,
         } else {
             numRetriesG += 1;
             return UploadPartMem(src, config, path, uploadId, i, offset,
-                                 chunkSize, ++tryNum, maxTries);
+                                 chunkSize, maxTries, ++tryNum);
         }
     }
     return etag;
@@ -211,6 +216,22 @@ void InitConfig(Config& config) {
     }
     config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
     config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
+}
+
+void LoadData(const char* fname, char* dest, size_t offset, size_t size) {
+    FILE* f = fopen(fname, "rb");
+    if (!f) {
+        throw runtime_error("Cannot open input file for reading");
+    }
+    if (fseek(f, offset, SEEK_SET)) {
+        throw runtime_error("Cannot move file pointer");
+    }
+    if (fread(dest, size, 1, f) != 1) {
+        throw runtime_error("Error reading input file");
+    }
+    if (fclose(f)) {
+        throw runtime_error("Error closing input file after read operation");
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -248,15 +269,17 @@ int main(int argc, char const* argv[]) {
             lyra::opt(config.maxRetries, "Max retries")["-r"]["--retries"](
                 "Max number of per-multipart part retries")
                 .optional() |
-            lyra::opt(config.memoryMapping)["-m"]["--mmap"]
-                .choices("none", "map", "load")
-                .help("memory mapping, 'none', 'map', 'preload'")
+            lyra::opt(config.memoryMapping,
+                      "Configure memory mapping options")["-m"]["--mmap"](
+                "memory mapping: 'none', 'map', 'preload'")
+                .choices("none", "preload", "map")
                 .optional();
 
         InitConfig(config);
 
         // Parse the program arguments:
         auto result = cli.parse({argc, argv});
+
         if (!result) {
             cerr << result.errorMessage() << endl;
             cerr << cli << endl;
@@ -305,6 +328,7 @@ int main(int argc, char const* argv[]) {
             vector<future<string>> etags(config.jobs);
             int fin = -1;
             char* src = nullptr;
+            vector<char> preloadBuffer;  // in case of pre-load
             if (config.memoryMapping == "map") {
                 fin = open(config.file.c_str(), O_RDONLY | O_LARGEFILE);
                 if (fin < 0) throw runtime_error("Cannot open input file");
@@ -312,60 +336,60 @@ int main(int argc, char const* argv[]) {
                     (char*)mmap(NULL, fileSize, PROT_READ, MAP_PRIVATE, fin, 0);
                 if (src == MAP_FAILED) runtime_error("Cannot map input file");
                 for (int i = 0; i != config.jobs; ++i) {
-                    if (i != config.jobs - 1) {
-                        etags[i] =
-                            async(launch::async, UploadPartMem, src, config,
-                                  path, uploadId, i, chunkSize * i, chunkSize,
-                                  1, config.maxRetries);
-                    } else {
-                        etags[i] =
-                            async(launch::async, UploadPartMem, src, config,
-                                  path, uploadId, i, chunkSize * i,
-                                  lastChunkSize, 1, config.maxRetries);
-                    }
+                    const size_t sz =
+                        i != config.jobs - 1 ? chunkSize : lastChunkSize;
+                    etags[i] = async(launch::async, UploadPartMem, src, config,
+                                     path, uploadId, i, chunkSize * i, sz,
+                                     config.maxRetries, 1);
                 }
-            } else if(config.memoryMapping == "preload") {
+            } else if (config.memoryMapping == "preload") {
+                const size_t fsize = FileSize(config.file);
+                if (fsize <= 0) {
+                    throw runtime_error("Error retrieving file size");
+                }
+                preloadBuffer.resize(fsize);
                 FILE* f = fopen(config.file.c_str(), "rb");
-                if(!f) {
-                    throw runtime_error("Cannot open input file fore reading");
+                if (!f) {
+                    throw runtime_error("Cannot open input file for reading");
                 }
-                if (fin < 0) throw runtime_error("Cannot open input file");
                 vector<future<void>> loaders(config.jobs);
-                vector<char> buffer(FileSize(config.file));
-                fread(buffer.data(), buffer.size(), 1, f); //split into multiple paralle loads.
-                fclose(f);
-                for (int i = 0; i != config.jobs; ++i) {
-                    const size_t offset = chunkSize * i;
-                    if (i != config.jobs - 1) {
-                        etags[i] =
-                            async(launch::async, UploadPartMem, &buffer[0] + offset, config,
-                                  path, uploadId, i, chunkSize * i, chunkSize,
-                                  1, config.maxRetries);
-                    } else {
-                        etags[i] =
-                            async(launch::async, UploadPartMem, &buffer[0] + offset, config,
-                                  path, uploadId, i, chunkSize * i, lastChunkSize,
-                                  1, config.maxRetries);
-                    }
+                auto start = chrono::high_resolution_clock::now();
+                for (int j = 0; j != config.jobs; ++j) {
+                    const size_t sz =
+                        j != config.jobs - 1 ? chunkSize : lastChunkSize;
+                    loaders[j] =
+                        async(launch::async, LoadData, config.file.c_str(),
+                              preloadBuffer.data(), chunkSize * j, sz);
                 }
-            
+                for (auto& l : loaders) l.wait();
+                auto end = chrono::high_resolution_clock::now();
+                cout << "Read time: "
+                     << chrono::duration_cast<chrono::milliseconds>(end - start)
+                            .count()
+                     << " ms" << endl;
+                for (int i = 0; i != config.jobs; ++i) {
+                    const size_t sz =
+                        i != config.jobs - 1 ? chunkSize : lastChunkSize;
+                    etags[i] =
+                        async(launch::async, UploadPartMem,
+                              &preloadBuffer[0] + chunkSize * i, config, path,
+                              uploadId, i, 0, sz, config.maxRetries, 1);
+                }
+            } else if (config.memoryMapping == "none") {
+                for (int i = 0; i != config.jobs; ++i) {
+                    const size_t sz =
+                        i != config.jobs - 1 ? chunkSize : lastChunkSize;
+                    etags[i] =
+                        async(launch::async, UploadPart, config, path, uploadId,
+                              i, chunkSize * i, sz, config.maxRetries, 1);
+                }
             } else {
-                for (int i = 0; i != config.jobs; ++i) {
-                    if (i != config.jobs - 1) {
-                        etags[i] = async(launch::async, UploadPart, config,
-                                         path, uploadId, i, chunkSize * i,
-                                         chunkSize, 1, config.maxRetries);
-                    } else {
-                        etags[i] = async(launch::async, UploadPart, config,
-                                         path, uploadId, i, chunkSize * i,
-                                         lastChunkSize, 1, config.maxRetries);
-                    }
-                }
+                throw invalid_argument("Wrong memory mapping option");
             }
 
             WebClient endUpload =
                 BuildEndUploadRequest(config, path, etags, uploadId);
-            if (config.memoryMapping == "map") {
+            if (config.memoryMapping == "mmap") {
                 if (munmap(src, fileSize))
                     throw runtime_error("Cannot unmap output file");
                 if (close(fin)) throw runtime_error("Error closing input file");
