@@ -303,9 +303,10 @@ int main(int argc, char const* argv[]) {
             // compute chunk size
             const size_t chunkSize = fileSize / config.jobs;
             // compute last chunk size
-            const size_t lastChunkSize = fileSize % config.jobs == 0
-                                             ? chunkSize
-                                             : fileSize % config.jobs;
+            const size_t lastChunkSize =
+                fileSize % config.jobs == 0
+                    ? chunkSize
+                    : fileSize % config.jobs + chunkSize;
             // initiate request
             auto signedHeaders = SignHeaders(
                 config.s3AccessKey, config.s3SecretKey, config.endpoint, "POST",
