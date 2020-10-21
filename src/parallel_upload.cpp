@@ -67,11 +67,8 @@ struct Config {
     string awsProfile;
     int maxRetries = 2;
     int jobs = 1;
+    int loadJobs = 1;
     string memoryMapping = "none";
-    // when pre-loading data the number of threads used to load data
-    // can be different from the number of threads used to send data
-    // int loadJobs = -1;
-    // int dataTransferJobs = -1;
 };
 
 void Validate(const Config& config) {
@@ -180,6 +177,27 @@ string UploadPart(const Config& config, const string& path,
     return etag;
 }
 
+string UploadPartMM(const Config& config, const string& path,
+                  const string& uploadId, int i, size_t offset,
+                  size_t chunkSize, int maxTries = 1, int tryNum = 1) {
+    WebClient ul = BuildUploadRequest(config, path, i, uploadId);
+    const bool ok = ul.UploadFileMM(config.file, offset, chunkSize);
+    if (!ok) {
+        throw(runtime_error("Cannot upload chunk " + to_string(i + 1)));
+    }
+    const string etag = HTTPHeader(ul.GetHeaderText(), "[Ee][Tt]ag");
+    if (etag.empty()) {
+        if (tryNum == maxTries) {
+            throw(runtime_error("No ETag found in HTTP header"));
+        } else {
+            numRetriesG += 1;
+            return UploadPartMM(config, path, uploadId, i, offset, chunkSize,
+                              maxTries, ++tryNum);
+        }
+    }
+    return etag;
+}
+
 string UploadPartMem(const char* src, const Config& config, const string& path,
                      const string& uploadId, int i, size_t offset,
                      size_t chunkSize, int maxTries = 1, int tryNum = 1) {
@@ -202,22 +220,6 @@ string UploadPartMem(const char* src, const Config& config, const string& path,
     return etag;
 }
 
-void InitConfig(Config& config) {
-    if (!config.s3AccessKey.empty() && !config.s3SecretKey.empty()) return;
-    const string fname = config.credentials.empty()
-                             ? GetHomeDir() + "/.aws/credentials"
-                             : config.credentials;
-    config.awsProfile =
-        config.awsProfile.empty() ? "default" : config.awsProfile;
-    Toml toml = ParseTomlFile(fname);  // only default profile supported
-    if (toml.find(config.awsProfile) == toml.end()) {
-        throw invalid_argument("ERROR: profile " + config.awsProfile +
-                               " not found");
-    }
-    config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
-    config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
-}
-
 void LoadData(const char* fname, char* dest, size_t offset, size_t size) {
     FILE* f = fopen(fname, "rb");
     if (!f) {
@@ -232,6 +234,22 @@ void LoadData(const char* fname, char* dest, size_t offset, size_t size) {
     if (fclose(f)) {
         throw runtime_error("Error closing input file after read operation");
     }
+}
+
+void InitConfig(Config& config) {
+    if (!config.s3AccessKey.empty() && !config.s3SecretKey.empty()) return;
+    const string fname = config.credentials.empty()
+                             ? GetHomeDir() + "/.aws/credentials"
+                             : config.credentials;
+    config.awsProfile =
+        config.awsProfile.empty() ? "default" : config.awsProfile;
+    Toml toml = ParseTomlFile(fname);  // only default profile supported
+    if (toml.find(config.awsProfile) == toml.end()) {
+        throw invalid_argument("ERROR: profile " + config.awsProfile +
+                               " not found");
+    }
+    config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
+    config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
 }
 
 //------------------------------------------------------------------------------
@@ -256,7 +274,11 @@ int main(int argc, char const* argv[]) {
             lyra::opt(config.file, "file")["-f"]["--file"]("File name")
                 .required() |
             lyra::opt(config.jobs, "parallel jobs")["-j"]["--jobs"](
-                "Number inputFile parallel jobs")
+                "Number parallel upload jobs")
+                .optional() |
+            lyra::opt(config.loadJobs,
+                      "parallel load jobs")["-J"]["--loadjobs"](
+                "Number of parallel data load jobs (preload option)")
                 .optional() |
             lyra::opt(config.credentials,
                       "credentials file")["-c"]["--credentials"](
@@ -331,17 +353,12 @@ int main(int argc, char const* argv[]) {
             char* src = nullptr;
             vector<char> preloadBuffer;  // in case of pre-load
             if (config.memoryMapping == "map") {
-                fin = open(config.file.c_str(), O_RDONLY | O_LARGEFILE);
-                if (fin < 0) throw runtime_error("Cannot open input file");
-                src =
-                    (char*)mmap(NULL, fileSize, PROT_READ, MAP_PRIVATE, fin, 0);
-                if (src == MAP_FAILED) runtime_error("Cannot map input file");
                 for (int i = 0; i != config.jobs; ++i) {
                     const size_t sz =
                         i != config.jobs - 1 ? chunkSize : lastChunkSize;
-                    etags[i] = async(launch::async, UploadPartMem, src, config,
-                                     path, uploadId, i, chunkSize * i, sz,
-                                     config.maxRetries, 1);
+                    etags[i] =
+                        async(launch::async, UploadPartMM, config, path, uploadId,
+                              i, chunkSize * i, sz, config.maxRetries, 1);
                 }
             } else if (config.memoryMapping == "preload") {
                 const size_t fsize = FileSize(config.file);
@@ -353,7 +370,7 @@ int main(int argc, char const* argv[]) {
                 if (!f) {
                     throw runtime_error("Cannot open input file for reading");
                 }
-                vector<future<void>> loaders(config.jobs);
+                vector<future<void>> loaders(config.loadJobs);
                 auto start = chrono::high_resolution_clock::now();
                 for (int j = 0; j != config.jobs; ++j) {
                     const size_t sz =

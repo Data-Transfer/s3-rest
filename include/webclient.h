@@ -35,6 +35,10 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cstring>
 
 #include <array>
 #include <atomic>
@@ -87,15 +91,13 @@ class WebClient {
         other.curl_ = NULL;
     }
     WebClient() { InitEnv(); }
-    WebClient(const std::string& url) : url_(url), method_("GET") {
-        InitEnv();
-    }
+    WebClient(const std::string& url) : url_(url), method_("GET") { InitEnv(); }
     WebClient(const std::string& ep, const std::string& path,
-               const std::string& method = "GET",
-               const std::map<std::string, std::string> params =
-                   std::map<std::string, std::string>(),
-               const std::map<std::string, std::string> headers =
-                   std::map<std::string, std::string>())
+              const std::string& method = "GET",
+              const std::map<std::string, std::string> params =
+                  std::map<std::string, std::string>(),
+              const std::map<std::string, std::string> headers =
+                  std::map<std::string, std::string>())
         : endpoint_(ep),
           path_(path),
           method_(method),
@@ -243,6 +245,25 @@ class WebClient {
         return result;
     }
 
+    // bool UploadFileUnbuffered(const std::string& fname) {
+    //     const int flags = O_RDONLY | O_LARGEFILE;
+    //     const int mode = S_IRUSR;  // | S_IWUSR | S_IRGRP | S_IROTH;
+    //     const int fd = open(fname.c_str(), flags, mode);
+    //     const size_t size = FileSize(fname);
+
+    //     if (!SetReadFunction(NULL, file)) {
+    //         throw std::runtime_error("Cannot set read function");
+    //     }
+    //     SetMethod("PUT", size);
+    //     const bool result = Send();
+    //     if (!result) {
+    //         throw std::runtime_error("Error sending request: " + ErrorMsg());
+    //         fclose(file);
+    //     }
+    //     close(fd);
+    //     return result;
+    // }
+
     bool UploadDataFromBuffer(const char* data, size_t offset, size_t size) {
 #ifdef IGNORE_SIGPIPE
         signal(SIGPIPE, SIG_IGN);
@@ -286,6 +307,42 @@ class WebClient {
         }
         fclose(file);
         return result;
+    }
+
+    bool UploadFileMM(const std::string& fname, size_t offset, size_t size) {
+#ifdef IGNORE_SIGPIPE
+        signal(SIGPIPE, SIG_IGN);
+        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
+#endif
+        int fd = open(fname.c_str(), O_RDONLY | O_LARGEFILE);
+        if (fd < 0) {
+            throw std::runtime_error("Error cannot open input file: " +
+                                     std::string(strerror(errno)));
+            exit(EXIT_FAILURE);
+        }
+      
+        char* src = (char*)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, offset);
+        if (src == MAP_FAILED) {  // mmap returns (void *) -1 == MAP_FAILED
+            throw std::runtime_error("Error mapping memory: " +
+                                     std::string(strerror(errno)));
+            exit(EXIT_FAILURE);
+        }
+        if (!UploadDataFromBuffer(src, 0, size)) {
+            throw std::runtime_error("Error uploading memory mapped data");
+            exit(EXIT_FAILURE);
+        }
+        
+        if (munmap(src, size)) {
+            throw std::runtime_error("Error unmapping memory: " +
+                                     std::string(strerror(errno)));
+            exit(EXIT_FAILURE);
+        }
+        if (close(fd)) {
+            throw std::runtime_error("Error closing file" +
+                                     std::string(strerror(errno)));
+            exit(EXIT_FAILURE);
+        }
+        return true;
     }
 
     std::string ErrorMsg() const { return errorBuffer_.data(); }
