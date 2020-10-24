@@ -49,9 +49,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#ifdef IGNORE_SIGPIPE
+//#ifdef IGNORE_SIGPIPE REQUIRED!
 #include <signal.h>
-#endif
+//#endif
 
 #include "url_utility.h"
 #include "utility.h"
@@ -265,10 +265,6 @@ class WebClient {
     // }
 
     bool UploadDataFromBuffer(const char* data, size_t offset, size_t size) {
-#ifdef IGNORE_SIGPIPE
-        signal(SIGPIPE, SIG_IGN);
-        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
-#endif
         if (curl_easy_setopt(curl_, CURLOPT_READFUNCTION, BufferReader) !=
             CURLE_OK) {
             throw std::runtime_error("Cannot set curl read function");
@@ -285,10 +281,6 @@ class WebClient {
     }
 
     bool UploadFile(const std::string& fname, size_t offset, size_t size) {
-#ifdef IGNORE_SIGPIPE
-        signal(SIGPIPE, SIG_IGN);
-        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
-#endif
         FILE* file = fopen(fname.c_str(), "rb");
         if (!file) {
             throw std::runtime_error("Cannot open file " + fname);
@@ -310,10 +302,6 @@ class WebClient {
     }
 
     bool UploadFileMM(const std::string& fname, size_t offset, size_t size) {
-#ifdef IGNORE_SIGPIPE
-        signal(SIGPIPE, SIG_IGN);
-        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
-#endif
         int fd = open(fname.c_str(), O_RDONLY | O_LARGEFILE);
         if (fd < 0) {
             throw std::runtime_error("Error cannot open input file: " +
@@ -370,10 +358,10 @@ class WebClient {
    private:
     bool Status(CURLcode cc) const {
         if (cc == 0) return true;
-        // deal with SIGPIPE
+        // deal with "SSL_write() returned SYSCALL, errno = 32"
         if (cc == CURLE_SEND_ERROR) {
             const std::string err(begin(errorBuffer_), end(errorBuffer_));
-            if (err.find("pipe") != std::string::npos) return true;
+            if (err.find("32") != std::string::npos) return true;
         }
         return false;
     }
@@ -438,6 +426,10 @@ class WebClient {
         if (!endpoint_.empty()) {
             BuildURL();
         }
+//#ifdef IGNORE_SIGPIPE REQUIRED ACTUALLY!
+        signal(SIGPIPE, SIG_IGN);
+        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
+//#endif
         return true;
     handle_error:
         throw(std::runtime_error(errorBuffer_.data()));

@@ -177,65 +177,6 @@ string UploadPart(const Config& config, const string& path,
     return etag;
 }
 
-string UploadPartMM(const Config& config, const string& path,
-                  const string& uploadId, int i, size_t offset,
-                  size_t chunkSize, int maxTries = 1, int tryNum = 1) {
-    WebClient ul = BuildUploadRequest(config, path, i, uploadId);
-    const bool ok = ul.UploadFileMM(config.file, offset, chunkSize);
-    if (!ok) {
-        throw(runtime_error("Cannot upload chunk " + to_string(i + 1)));
-    }
-    const string etag = HTTPHeader(ul.GetHeaderText(), "[Ee][Tt]ag");
-    if (etag.empty()) {
-        if (tryNum == maxTries) {
-            throw(runtime_error("No ETag found in HTTP header"));
-        } else {
-            numRetriesG += 1;
-            return UploadPartMM(config, path, uploadId, i, offset, chunkSize,
-                              maxTries, ++tryNum);
-        }
-    }
-    return etag;
-}
-
-string UploadPartMem(const char* src, const Config& config, const string& path,
-                     const string& uploadId, int i, size_t offset,
-                     size_t chunkSize, int maxTries = 1, int tryNum = 1) {
-    WebClient ul = BuildUploadRequest(config, path, i, uploadId);
-    const bool ok = ul.UploadDataFromBuffer(src, offset, chunkSize);
-    if (!ok) {
-        throw(runtime_error("Cannot upload chunk " + to_string(i + 1) + " " +
-                            ul.ErrorMsg()));
-    }
-    const string etag = HTTPHeader(ul.GetHeaderText(), "[Ee][Tt]ag");
-    if (etag.empty()) {
-        if (tryNum == maxTries) {
-            throw(runtime_error("No ETag found in HTTP header"));
-        } else {
-            numRetriesG += 1;
-            return UploadPartMem(src, config, path, uploadId, i, offset,
-                                 chunkSize, maxTries, ++tryNum);
-        }
-    }
-    return etag;
-}
-
-void LoadData(const char* fname, char* dest, size_t offset, size_t size) {
-    FILE* f = fopen(fname, "rb");
-    if (!f) {
-        throw runtime_error("Cannot open input file for reading");
-    }
-    if (fseek(f, offset, SEEK_SET)) {
-        throw runtime_error("Cannot move file pointer");
-    }
-    if (fread(dest, size, 1, f) != 1) {
-        throw runtime_error("Error reading input file");
-    }
-    if (fclose(f)) {
-        throw runtime_error("Error closing input file after read operation");
-    }
-}
-
 void InitConfig(Config& config) {
     if (!config.s3AccessKey.empty() && !config.s3SecretKey.empty()) return;
     const string fname = config.credentials.empty()
@@ -276,10 +217,6 @@ int main(int argc, char const* argv[]) {
             lyra::opt(config.jobs, "parallel jobs")["-j"]["--jobs"](
                 "Number parallel upload jobs")
                 .optional() |
-            lyra::opt(config.loadJobs,
-                      "parallel load jobs")["-J"]["--loadjobs"](
-                "Number of parallel data load jobs (preload option)")
-                .optional() |
             lyra::opt(config.credentials,
                       "credentials file")["-c"]["--credentials"](
                 "Credentials file, AWS cli format")
@@ -290,11 +227,6 @@ int main(int argc, char const* argv[]) {
                 .optional() |
             lyra::opt(config.maxRetries, "Max retries")["-r"]["--retries"](
                 "Max number of per-multipart part retries")
-                .optional() |
-            lyra::opt(config.memoryMapping,
-                      "Configure memory mapping options")["-m"]["--mmap"](
-                "memory mapping: 'none', 'map', 'preload'")
-                .choices("none", "preload", "map")
                 .optional();
 
         InitConfig(config);
@@ -349,69 +281,15 @@ int main(int argc, char const* argv[]) {
             const string xml(begin(resp), end(resp));
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
             vector<future<string>> etags(config.jobs);
-            int fin = -1;
-            char* src = nullptr;
-            vector<char> preloadBuffer;  // in case of pre-load
-            if (config.memoryMapping == "map") {
-                for (int i = 0; i != config.jobs; ++i) {
-                    const size_t sz =
-                        i != config.jobs - 1 ? chunkSize : lastChunkSize;
-                    etags[i] =
-                        async(launch::async, UploadPartMM, config, path, uploadId,
-                              i, chunkSize * i, sz, config.maxRetries, 1);
-                }
-            } else if (config.memoryMapping == "preload") {
-                const size_t fsize = FileSize(config.file);
-                if (fsize <= 0) {
-                    throw runtime_error("Error retrieving file size");
-                }
-                preloadBuffer.resize(fsize);
-                FILE* f = fopen(config.file.c_str(), "rb");
-                if (!f) {
-                    throw runtime_error("Cannot open input file for reading");
-                }
-                vector<future<void>> loaders(config.loadJobs);
-                auto start = chrono::high_resolution_clock::now();
-                for (int j = 0; j != config.jobs; ++j) {
-                    const size_t sz =
-                        j != config.jobs - 1 ? chunkSize : lastChunkSize;
-                    loaders[j] =
-                        async(launch::async, LoadData, config.file.c_str(),
-                              preloadBuffer.data(), chunkSize * j, sz);
-                }
-                for (auto& l : loaders) l.wait();
-                auto end = chrono::high_resolution_clock::now();
-                cout << "Read time: "
-                     << chrono::duration_cast<chrono::milliseconds>(end - start)
-                            .count()
-                     << " ms" << endl;
-                for (int i = 0; i != config.jobs; ++i) {
-                    const size_t sz =
-                        i != config.jobs - 1 ? chunkSize : lastChunkSize;
-                    etags[i] =
-                        async(launch::async, UploadPartMem,
-                              &preloadBuffer[0] + chunkSize * i, config, path,
-                              uploadId, i, 0, sz, config.maxRetries, 1);
-                }
-            } else if (config.memoryMapping == "none") {
-                for (int i = 0; i != config.jobs; ++i) {
-                    const size_t sz =
-                        i != config.jobs - 1 ? chunkSize : lastChunkSize;
-                    etags[i] =
-                        async(launch::async, UploadPart, config, path, uploadId,
-                              i, chunkSize * i, sz, config.maxRetries, 1);
-                }
-            } else {
-                throw invalid_argument("Wrong memory mapping option");
+            for (int i = 0; i != config.jobs; ++i) {
+                const size_t sz =
+                    i != config.jobs - 1 ? chunkSize : lastChunkSize;
+                etags[i] =
+                    async(launch::async, UploadPart, config, path, uploadId,
+                            i, chunkSize * i, sz, config.maxRetries, 1);
             }
-
             WebClient endUpload =
                 BuildEndUploadRequest(config, path, etags, uploadId);
-            if (config.memoryMapping == "mmap") {
-                if (munmap(src, fileSize))
-                    throw runtime_error("Cannot unmap output file");
-                if (close(fin)) throw runtime_error("Error closing input file");
-            }
             if (!endUpload.Send()) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }

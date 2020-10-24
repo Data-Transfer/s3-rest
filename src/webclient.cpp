@@ -31,16 +31,15 @@
  *POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
 #include <webclient.h>
-
+#include <iostream>
+using namespace std;
 std::atomic<int> WebClient::numInstances_{0};
 std::mutex WebClient::cleanupMutex_;
 
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
-    FILE* readhere = (FILE*) userdata;
-    /* copy as much data as possible into the 'ptr' buffer, but no more than
-       'size' * 'nmemb' bytes! */
-    const size_t retcode = fread(ptr, size, nmemb, readhere);
-    return retcode;
+    FILE* f = static_cast<FILE*>(userdata);
+    if(ferror(f)) return CURL_READFUNC_ABORT;
+    return fread(ptr, size, nmemb, f) * size;
 }
 
 size_t WriteFile(char* data, size_t size, size_t nmemb, void* userdata) {
