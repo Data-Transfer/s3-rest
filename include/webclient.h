@@ -226,8 +226,8 @@ class WebClient {
         readBuffer_.offset = 0;
     }
 
-    bool UploadFile(const std::string& fname) {
-        const size_t size = FileSize(fname);
+    bool UploadFile(const std::string& fname, size_t fsize = 0) {
+        const size_t size = fsize ? fsize : FileSize(fname);
         FILE* file = fopen(fname.c_str(), "rb");
         if (!file) {
             throw std::runtime_error("Cannot open file " + fname);
@@ -245,11 +245,11 @@ class WebClient {
         return result;
     }
 
-    // bool UploadFileUnbuffered(const std::string& fname) {
+    // bool UploadFileUnbuffered(const std::string& fname, size_t fsize) {
     //     const int flags = O_RDONLY | O_LARGEFILE;
     //     const int mode = S_IRUSR;  // | S_IWUSR | S_IRGRP | S_IROTH;
     //     const int fd = open(fname.c_str(), flags, mode);
-    //     const size_t size = FileSize(fname);
+        
 
     //     if (!SetReadFunction(NULL, file)) {
     //         throw std::runtime_error("Cannot set read function");

@@ -46,6 +46,6 @@ size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
 size_t WriteFile(char* data, size_t size, size_t nmemb, void* userdata) {
     FILE* writehere = (FILE*) userdata;
     size = size * nmemb;
-    fwrite(data, 1, size, writehere);
+    fwrite(data, size, nmemb, writehere);
     return size;
 }
