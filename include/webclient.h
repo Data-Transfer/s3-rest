@@ -245,25 +245,6 @@ class WebClient {
         return result;
     }
 
-    // bool UploadFileUnbuffered(const std::string& fname, size_t fsize) {
-    //     const int flags = O_RDONLY | O_LARGEFILE;
-    //     const int mode = S_IRUSR;  // | S_IWUSR | S_IRGRP | S_IROTH;
-    //     const int fd = open(fname.c_str(), flags, mode);
-        
-
-    //     if (!SetReadFunction(NULL, file)) {
-    //         throw std::runtime_error("Cannot set read function");
-    //     }
-    //     SetMethod("PUT", size);
-    //     const bool result = Send();
-    //     if (!result) {
-    //         throw std::runtime_error("Error sending request: " + ErrorMsg());
-    //         fclose(file);
-    //     }
-    //     close(fd);
-    //     return result;
-    // }
-
     bool UploadDataFromBuffer(const char* data, size_t offset, size_t size) {
 #ifdef IGNORE_SIGPIPE
         signal(SIGPIPE, SIG_IGN);
@@ -285,10 +266,6 @@ class WebClient {
     }
 
     bool UploadFile(const std::string& fname, size_t offset, size_t size) {
-#ifdef IGNORE_SIGPIPE
-        signal(SIGPIPE, SIG_IGN);
-        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
-#endif
         FILE* file = fopen(fname.c_str(), "rb");
         if (!file) {
             throw std::runtime_error("Cannot open file " + fname);
@@ -373,7 +350,7 @@ class WebClient {
         // deal with SIGPIPE
         if (cc == CURLE_SEND_ERROR) {
             const std::string err(begin(errorBuffer_), end(errorBuffer_));
-            if (err.find("pipe") != std::string::npos) return true;
+            if (err.find("32") != std::string::npos) return true;
         }
         return false;
     }
@@ -438,6 +415,8 @@ class WebClient {
         if (!endpoint_.empty()) {
             BuildURL();
         }
+        signal(SIGPIPE, SIG_IGN);
+        curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
         return true;
     handle_error:
         throw(std::runtime_error(errorBuffer_.data()));
