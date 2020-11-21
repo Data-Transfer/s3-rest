@@ -245,25 +245,6 @@ class WebClient {
         return result;
     }
 
-    // bool UploadFileUnbuffered(const std::string& fname, size_t fsize) {
-    //     const int flags = O_RDONLY | O_LARGEFILE;
-    //     const int mode = S_IRUSR;  // | S_IWUSR | S_IRGRP | S_IROTH;
-    //     const int fd = open(fname.c_str(), flags, mode);
-        
-
-    //     if (!SetReadFunction(NULL, file)) {
-    //         throw std::runtime_error("Cannot set read function");
-    //     }
-    //     SetMethod("PUT", size);
-    //     const bool result = Send();
-    //     if (!result) {
-    //         throw std::runtime_error("Error sending request: " + ErrorMsg());
-    //         fclose(file);
-    //     }
-    //     close(fd);
-    //     return result;
-    // }
-
     bool UploadDataFromBuffer(const char* data, size_t offset, size_t size) {
         if (curl_easy_setopt(curl_, CURLOPT_READFUNCTION, BufferReader) !=
             CURLE_OK) {
@@ -426,10 +407,8 @@ class WebClient {
         if (!endpoint_.empty()) {
             BuildURL();
         }
-//#ifdef IGNORE_SIGPIPE REQUIRED ACTUALLY!
         signal(SIGPIPE, SIG_IGN);
         curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
-//#endif
         return true;
     handle_error:
         throw(std::runtime_error(errorBuffer_.data()));
