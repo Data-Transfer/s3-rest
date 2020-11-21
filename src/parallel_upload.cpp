@@ -1,4 +1,3 @@
-
 /*******************************************************************************
  * BSD 3-Clause License
  *
@@ -67,8 +66,6 @@ struct Config {
     string awsProfile;
     int maxRetries = 2;
     int jobs = 1;
-    int loadJobs = 1;
-    string memoryMapping = "none";
 };
 
 void Validate(const Config& config) {
