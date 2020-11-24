@@ -34,15 +34,15 @@
 
 #include <curl/curl.h>
 #include <curl/easy.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
 #include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
-#include <cstring>
 
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <mutex>
@@ -59,6 +59,11 @@
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata);
 
 size_t WriteFile(char* data, size_t size, size_t nmemb, void* outbuffer);
+
+size_t ReadFileUnbuffered(void* ptr, size_t size, size_t nmemb, void* userdata);
+
+size_t WriteFileUnbuffered(char* data, size_t size, size_t nmemb,
+                           void* outbuffer);
 
 class WebClient {
     using WriteFunction = size_t (*)(char* data, size_t size, size_t nmemb,
@@ -282,6 +287,28 @@ class WebClient {
         return result;
     }
 
+    bool UploadFileUnbuffered(const std::string& fname, size_t offset,
+                              size_t size) {
+        int file = open(fname.c_str(), S_IRGRP | O_LARGEFILE);
+        if (file < 0) {
+            throw std::runtime_error(strerror(errno));
+        }
+        if (lseek(file, offset, SEEK_SET) < 0) {
+            throw std::runtime_error(strerror(errno));
+        }
+        if (!SetReadFunction(ReadFileUnbuffered, &file)) {
+            throw std::runtime_error("Cannot set read function");
+        }
+        SetMethod("PUT", size);
+        const bool result = Send();
+        if (!result) {
+            throw std::runtime_error("Error sending request: " + ErrorMsg());
+            close(file);
+        }
+        close(file);
+        return result;
+    }
+
     bool UploadFileMM(const std::string& fname, size_t offset, size_t size) {
         int fd = open(fname.c_str(), O_RDONLY | O_LARGEFILE);
         if (fd < 0) {
@@ -289,7 +316,7 @@ class WebClient {
                                      std::string(strerror(errno)));
             exit(EXIT_FAILURE);
         }
-      
+
         char* src = (char*)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, offset);
         if (src == MAP_FAILED) {  // mmap returns (void *) -1 == MAP_FAILED
             throw std::runtime_error("Error mapping memory: " +
@@ -300,7 +327,7 @@ class WebClient {
             throw std::runtime_error("Error uploading memory mapped data");
             exit(EXIT_FAILURE);
         }
-        
+
         if (munmap(src, size)) {
             throw std::runtime_error("Error unmapping memory: " +
                                      std::string(strerror(errno)));

@@ -31,20 +31,35 @@
  *POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
 #include <webclient.h>
+
 #include <iostream>
+#include <algorithm>
+
 using namespace std;
 std::atomic<int> WebClient::numInstances_{0};
 std::mutex WebClient::cleanupMutex_;
 
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
     FILE* f = static_cast<FILE*>(userdata);
-    if(ferror(f)) return CURL_READFUNC_ABORT;
+    if (ferror(f)) return CURL_READFUNC_ABORT;
     return fread(ptr, size, nmemb, f) * size;
 }
 
-size_t WriteFile(char* data, size_t size, size_t nmemb, void* userdata) {
-    FILE* writehere = (FILE*) userdata;
+size_t ReadFileUnbuffered(void* ptr, size_t size, size_t nmemb,
+                          void* userdata) {
+    const int fd = *static_cast<int*>(userdata);
+    return max(ssize_t(0), read(fd, ptr, size * nmemb));
+}
+
+size_t WriteFile(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    FILE* writehere = static_cast<FILE*>(userdata);
     size = size * nmemb;
-    fwrite(data, size, nmemb, writehere);
+    fwrite(ptr, size, nmemb, writehere);
     return size;
+}
+
+size_t WriteFileUnbuffered(char* ptr, size_t size, size_t nmemb,
+                           void* userdata) {
+    const int fd = *static_cast<int*>(userdata);
+    return max(ssize_t(0), write(fd, ptr, size * nmemb));
 }

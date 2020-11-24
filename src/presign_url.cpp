@@ -78,7 +78,7 @@ int main(int argc, char const* argv[]) {
         lyra::opt(args.awsSecretKey,
                   "awsSecretKey")["-s"]["--secret_key"]("AWS secret key")
             .required() |
-        lyra::opt(args.endpoint, "endpoint")["-e"]["--endpoint"]("Endpoing URL")
+        lyra::opt(args.endpoint, "endpoint")["-e"]["--endpoint"]("Endpoint URL")
             .required() |
         lyra::opt(args.method, "method")["-m"]["--method"](
             "HTTP method: get | put | post | delete")

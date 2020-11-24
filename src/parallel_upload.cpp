@@ -181,7 +181,7 @@ void InitConfig(Config& config) {
                              : config.credentials;
     config.awsProfile =
         config.awsProfile.empty() ? "default" : config.awsProfile;
-    Toml toml = ParseTomlFile(fname);  // only default profile supported
+    Toml toml = ParseTomlFile(fname);
     if (toml.find(config.awsProfile) == toml.end()) {
         throw invalid_argument("ERROR: profile " + config.awsProfile +
                                " not found");
