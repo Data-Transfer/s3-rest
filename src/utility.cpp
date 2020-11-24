@@ -75,14 +75,13 @@ std::string GetHomeDir() {
 
 using namespace std;
 
-namespace {
+
 void Trim(string& s) {
     auto i = s.find("#");
     if (i != string::npos) s.erase(i);
     i = s.find_last_not_of(" \r\n\t");
     if(i != string::npos) s.erase(++i);
 }
-}  // namespace
 
 Toml ParseTomlFile(const string& filename) {
     ifstream is(filename);

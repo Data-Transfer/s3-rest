@@ -39,8 +39,10 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <fstream>
 #include <future>
 #include <iostream>
+#include <random>
 #include <regex>
 #include <set>
 #include <stdexcept>
@@ -64,6 +66,7 @@ struct Config {
     string file;
     string credentials;
     string awsProfile;
+    vector<string> endpoints;
     int maxRetries = 2;
     int jobs = 1;
 };
@@ -113,8 +116,9 @@ WebClient BuildUploadRequest(const Config& config, const string& path,
     Parameters params = {{"partNumber", to_string(partNum + 1)},
                          {"uploadId", uploadId}};
     auto signedHeaders =
-        SignHeaders(config.s3AccessKey, config.s3SecretKey, config.endpoint,
-                    "PUT", config.bucket, config.key, "", params);
+        SignHeaders(config.s3AccessKey, config.s3SecretKey,
+                    config.endpoints[partNum % config.endpoints.size()], "PUT",
+                    config.bucket, config.key, "", params);
     Headers headers(begin(signedHeaders), end(signedHeaders));
     WebClient req(config.endpoint, path, "PUT", params, headers);
     return req;
@@ -142,10 +146,14 @@ string BuildEndUploadXML(vector<future<string>>& etags) {
 WebClient BuildEndUploadRequest(const Config& config, const string& path,
                                 vector<future<string>>& etags,
                                 const string& uploadId) {
+    std::random_device r;
+    std::default_random_engine e1(r());
+    std::uniform_int_distribution<int> uniformDist(0,
+                                                   config.endpoints.size() - 1);
     Parameters params = {{"uploadId", uploadId}};
-    auto signedHeaders =
-        SignHeaders(config.s3AccessKey, config.s3SecretKey, config.endpoint,
-                    "POST", config.bucket, config.key, "", params);
+    auto signedHeaders = SignHeaders(config.s3AccessKey, config.s3SecretKey,
+                                     config.endpoints[uniformDist(e1)], "POST",
+                                     config.bucket, config.key, "", params);
     Headers headers(begin(signedHeaders), end(signedHeaders));
     WebClient req(config.endpoint, path, "POST", params, headers);
     req.SetMethod("POST");
@@ -175,19 +183,36 @@ string UploadPart(const Config& config, const string& path,
 }
 
 void InitConfig(Config& config) {
-    if (!config.s3AccessKey.empty() && !config.s3SecretKey.empty()) return;
-    const string fname = config.credentials.empty()
-                             ? GetHomeDir() + "/.aws/credentials"
-                             : config.credentials;
-    config.awsProfile =
-        config.awsProfile.empty() ? "default" : config.awsProfile;
-    Toml toml = ParseTomlFile(fname);
-    if (toml.find(config.awsProfile) == toml.end()) {
-        throw invalid_argument("ERROR: profile " + config.awsProfile +
-                               " not found");
+    if (!config.s3AccessKey.empty() && !config.s3SecretKey.empty()) {
+        const string fname = config.credentials.empty()
+                                ? GetHomeDir() + "/.aws/credentials"
+                                : config.credentials;
+        config.awsProfile =
+            config.awsProfile.empty() ? "default" : config.awsProfile;
+        Toml toml = ParseTomlFile(fname);
+        if (toml.find(config.awsProfile) == toml.end()) {
+            throw invalid_argument("ERROR: profile " + config.awsProfile +
+                                " not found");
+        }
+        config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
+        config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
+    }   
+    if (config.endpoint.substr(0, 5) != "http:" &&
+        config.endpoint.substr(0, 6) != "https:") {
+        
+        ifstream in(config.endpoint);
+        if (in.fail()) {
+            throw runtime_error("Cannot open configuration file " +
+                                config.endpoint);
+        }
+        string line;
+        while (getline(in, line)) {
+            Trim(line);
+            if (line.length() == 0 || line[0] == '#') continue;
+            config.endpoints.push_back(line);
+            line = "";
+        }
     }
-    config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
-    config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
 }
 
 //------------------------------------------------------------------------------
@@ -198,7 +223,7 @@ int main(int argc, char const* argv[]) {
             lyra::help(config.showHelp)
                 .description("Upload file to S3 bucket") |
             lyra::opt(config.s3AccessKey,
-                      "awsAccessKey")["-a"]["--access_key"]("AWS access key")
+                      "awsAccessKey")["-c"]["--access_key"]("AWS access key")
                 .optional() |
             lyra::opt(config.s3SecretKey,
                       "awsSecretKey")["-s"]["--secret_key"]("AWS secret key")
@@ -226,10 +251,10 @@ int main(int argc, char const* argv[]) {
                 "Max number of per-multipart part retries")
                 .optional();
 
-        InitConfig(config);
 
         // Parse the program arguments:
         auto result = cli.parse({argc, argv});
+        InitConfig(config);
 
         if (!result) {
             cerr << result.errorMessage() << endl;
@@ -282,8 +307,8 @@ int main(int argc, char const* argv[]) {
                 const size_t sz =
                     i != config.jobs - 1 ? chunkSize : lastChunkSize;
                 etags[i] =
-                    async(launch::async, UploadPart, config, path, uploadId,
-                            i, chunkSize * i, sz, config.maxRetries, 1);
+                    async(launch::async, UploadPart, config, path, uploadId, i,
+                          chunkSize * i, sz, config.maxRetries, 1);
             }
             WebClient endUpload =
                 BuildEndUploadRequest(config, path, etags, uploadId);

@@ -45,3 +45,4 @@ Toml ParseTomlFile(const std::string& filename); //works with AWS format (nested
                                             //as '<parent key>/'
 
 std::string GetHomeDir();
+void Trim(std::string& s);
