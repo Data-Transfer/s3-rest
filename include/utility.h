@@ -34,6 +34,11 @@
 
 #include <string>
 #include <unordered_map>
+#include <functional>
+
+using RandomIndex = std::function<int (void)>;
+
+RandomIndex RandomRange(int lowerBound, int upperBound);
 
 size_t FileSize(const std::string& filename);
 
