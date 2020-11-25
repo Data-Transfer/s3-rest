@@ -32,22 +32,23 @@
  ******************************************************************************/
 
 #ifdef __GNUC__
-  #if __GNUC__ > 8
-    #include <filesystem>
-  #else
-    #include <sys/stat.h>
-    #include <sys/types.h>
-  #endif
+#if __GNUC__ > 8
+#include <filesystem>
 #else
-  #include <filesystem>
+#include <sys/stat.h>
+#include <sys/types.h>
+#endif
+#else
+#include <filesystem>
 #endif
 
-#include <unistd.h>
-#include <sys/types.h>
 #include <pwd.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <regex>
 
 #include "utility.h"
@@ -66,21 +67,18 @@ size_t FileSize(const std::string& filename) {
 #endif
 }
 
-
 std::string GetHomeDir() {
-  struct passwd *pw = getpwuid(getuid());
-  return pw->pw_dir;
+    struct passwd* pw = getpwuid(getuid());
+    return pw->pw_dir;
 }
 
-
 using namespace std;
-
 
 void Trim(string& s) {
     auto i = s.find("#");
     if (i != string::npos) s.erase(i);
     i = s.find_last_not_of(" \r\n\t");
-    if(i != string::npos) s.erase(++i);
+    if (i != string::npos) s.erase(++i);
 }
 
 Toml ParseTomlFile(const string& filename) {
@@ -115,8 +113,8 @@ Toml ParseTomlFile(const string& filename) {
                 string value = sm[2];
                 Trim(value);
                 string keyPrefix = "";
-                if(!lastKey.empty() && curSectionData[lastKey].empty()) {
-                  keyPrefix = lastKey + "/";
+                if (!lastKey.empty() && curSectionData[lastKey].empty()) {
+                    keyPrefix = lastKey + "/";
                 }
                 curSectionData[keyPrefix + string(sm[1])] = value;
                 lastKey = sm[1];
@@ -136,4 +134,12 @@ Toml ParseTomlFile(const string& filename) {
     }
 
     return toml;
+}
+
+RandomIndex RandomRange(int lowerBound, int upperBound) {
+    std::random_device r;
+    std::seed_seq seed{r(), r(), r(), r(), r(), r(), r(), r()}; 
+    std::mt19937 e(seed);
+    std::uniform_int_distribution<int> uniformDist(lowerBound, upperBound);
+    return [&]() { return uniformDist(e);};
 }

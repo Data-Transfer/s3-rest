@@ -11,7 +11,7 @@ set(PAR_DLOAD_SRCS "parallel_download.cpp" url_utility.cpp aws_sign.cpp
 set(S3_CLIENT_SRCS "s3-client.cpp" url_utility.cpp aws_sign.cpp 
     webclient.cpp utility.cpp)
 
-set(CMAKE_CXX_FLAGS "-std=c++17" ${CMAKE_CXX_FLAGS})
+set(CMAKE_CXX_FLAGS "-std=c++17 -flto -Ofast" ${CMAKE_CXX_FLAGS})
 
 add_executable("s3-presign" ${PRESIGN_SRCS})
 add_executable("sign-headers" ${SIGN_HEADER_SRCS})
@@ -43,3 +43,4 @@ target_link_libraries("s3-download" curl)
 target_link_libraries("s3-download" ${CMAKE_THREAD_LIBS_INIT})
 
 add_compile_definitions(IGNORE_SIGPIPE)
+#add_compile_definitions(TIME_UPLOAD)

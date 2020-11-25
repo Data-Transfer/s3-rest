@@ -45,6 +45,7 @@
 #include <set>
 #include <stdexcept>
 #include <vector>
+#include <chrono>
 
 #include "lyra/lyra.hpp"
 #include "response_parser.h"
@@ -134,11 +135,12 @@ WebClient BuildUploadRequest(const Config& config, const string& path,
                              int partNum, const string& uploadId) {
     Parameters params = {{"partNumber", to_string(partNum + 1)},
                          {"uploadId", uploadId}};
+    const string endpoint = config.endpoints[partNum % config.endpoints.size()];
     auto signedHeaders =
-        SignHeaders(config.s3AccessKey, config.s3SecretKey, config.endpoint,
-                    "PUT", config.bucket, config.key, "", params);
+        SignHeaders(config.s3AccessKey, config.s3SecretKey, endpoint, "PUT",
+                    config.bucket, config.key, "", params);
     Headers headers(begin(signedHeaders), end(signedHeaders));
-    WebClient req(config.endpoint, path, "PUT", params, headers);
+    WebClient req(endpoint, path, "PUT", params, headers);
     return req;
 }
 
@@ -165,11 +167,13 @@ WebClient BuildEndUploadRequest(const Config& config, const string& path,
                                 vector<future<string>>& etags,
                                 const string& uploadId) {
     Parameters params = {{"uploadId", uploadId}};
+    auto randomIndex = RandomRange(0, config.endpoints.size() - 1);
+    const string endpoint = config.endpoints[randomIndex()];
     auto signedHeaders =
-        SignHeaders(config.s3AccessKey, config.s3SecretKey, "http://nimbus.pawsey.org.au:8080", //config.endpoint,
-                    "POST", config.bucket, config.key, "", params);
+        SignHeaders(config.s3AccessKey, config.s3SecretKey, endpoint, "POST",
+                    config.bucket, config.key, "", params);
     Headers headers(begin(signedHeaders), end(signedHeaders));
-    WebClient req(config.endpoint, path, "POST", params, headers);
+    WebClient req(endpoint, path, "POST", params, headers);
     req.SetMethod("POST");
     req.SetPostData(BuildEndUploadXML(etags));
     return req;
@@ -199,22 +203,26 @@ string UploadPart(const Config& config, const string& path,
 void InitConfig(Config& config) {
     if (config.s3AccessKey.empty() && config.s3SecretKey.empty()) {
         const string fname = config.credentials.empty()
-                                ? GetHomeDir() + "/.aws/credentials"
-                                : config.credentials;
+                                 ? GetHomeDir() + "/.aws/credentials"
+                                 : config.credentials;
         config.awsProfile =
             config.awsProfile.empty() ? "default" : config.awsProfile;
         Toml toml = ParseTomlFile(fname);
         if (toml.find(config.awsProfile) == toml.end()) {
             throw invalid_argument("ERROR: profile " + config.awsProfile +
-                                " not found");
+                                   " not found");
         }
         config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
         config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
     }
-    if(config.endpoint.empty()) throw invalid_argument("Error, empty endpoint");
-    if(NotURL(config.endpoint)) config.endpoints = ReadEndpoints(config.endpoint);
-    else config.endpoints.push_back(config.endpoint);
-    if(config.endpoints.empty()) throw invalid_argument("Error, no endpoints specified");
+    if (config.endpoint.empty())
+        throw invalid_argument("Error, empty endpoint");
+    if (NotURL(config.endpoint))
+        config.endpoints = ReadEndpoints(config.endpoint);
+    else
+        config.endpoints.push_back(config.endpoint);
+    if (config.endpoints.empty())
+        throw invalid_argument("Error, no endpoints specified");
     config.endpoint = config.endpoints[0];
 }
 
@@ -274,7 +282,8 @@ int main(int argc, char const* argv[]) {
         }
         fclose(inputFile);
         string path = "/" + config.bucket + "/" + config.key;
-
+        auto randomIndex = RandomRange(0, config.endpoints.size() - 1);
+        const string endpoint = config.endpoints[randomIndex()];
         if (config.jobs > 1) {
             // retrieve file size
             const size_t fileSize = FileSize(config.file);
@@ -287,12 +296,11 @@ int main(int argc, char const* argv[]) {
                     : fileSize % config.jobs + chunkSize;
             // initiate request
             auto signedHeaders = SignHeaders(
-                config.s3AccessKey, config.s3SecretKey, config.endpoint, "POST",
+                config.s3AccessKey, config.s3SecretKey, endpoint, "POST",
                 config.bucket, config.key, "", {{"uploads=", ""}});
             map<string, string> headers(begin(signedHeaders),
                                         end(signedHeaders));
-            WebClient req(config.endpoint, path, "POST", {{"uploads=", ""}},
-                          headers);
+            WebClient req(endpoint, path, "POST", {{"uploads=", ""}}, headers);
             if (!req.Send()) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }
@@ -305,6 +313,10 @@ int main(int argc, char const* argv[]) {
             const string xml(begin(resp), end(resp));
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
             vector<future<string>> etags(config.jobs);
+#ifdef TIME_UPLOAD
+            using Clock = chrono::high_resolution_clock;
+            auto start = Clock::now();
+#endif
             for (int i = 0; i != config.jobs; ++i) {
                 const size_t sz =
                     i != config.jobs - 1 ? chunkSize : lastChunkSize;
@@ -314,6 +326,14 @@ int main(int argc, char const* argv[]) {
             }
             WebClient endUpload =
                 BuildEndUploadRequest(config, path, etags, uploadId);
+#ifdef TIME_UPLOAD
+            const auto end = Clock::now();
+            const double elapsed =
+                double(chrono::duration_cast<chrono::nanoseconds>(end - start)
+                           .count()) /
+                1E9;
+            cout << "Elapsed: " << elapsed << " s" << endl;
+#endif
             if (!endUpload.Send()) {
                 throw runtime_error("Error sending request: " + req.ErrorMsg());
             }
@@ -330,9 +350,9 @@ int main(int argc, char const* argv[]) {
             }
             cout << etag << endl;
         } else {
-            auto signedHeaders = SignHeaders(
-                config.s3AccessKey, config.s3SecretKey, config.endpoint, "PUT",
-                config.bucket, config.key, "");
+            auto signedHeaders =
+                SignHeaders(config.s3AccessKey, config.s3SecretKey, endpoint,
+                            "PUT", config.bucket, config.key, "");
             map<string, string> headers(begin(signedHeaders),
                                         end(signedHeaders));
             WebClient req(config.endpoint, path, "PUT", {}, headers);
