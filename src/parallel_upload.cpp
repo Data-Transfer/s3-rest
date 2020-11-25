@@ -64,9 +64,31 @@ struct Config {
     string file;
     string credentials;
     string awsProfile;
+    vector<string> endpoints;
     int maxRetries = 2;
     int jobs = 1;
 };
+
+vector<string> ReadEndpoints(const string& fname) {
+    vector<string> ep;
+    ifstream in(fname);
+    if (in.fail()) {
+        throw runtime_error("Cannot open configuration file " + fname);
+    }
+    string line;
+    while (getline(in, line)) {
+        Trim(line);
+        if (line.length() == 0 || line[0] == '#') continue;
+        ep.push_back(line);
+        line = "";
+    }
+    return ep;
+}
+
+bool NotURL(const string& p) {
+    return p.empty() ||
+           (p.substr(0, 5) != "http:" && p.substr(0, 6) != "https:");
+}
 
 void Validate(const Config& config) {
     if (config.s3AccessKey.empty() && !config.s3SecretKey.empty() ||
@@ -144,7 +166,7 @@ WebClient BuildEndUploadRequest(const Config& config, const string& path,
                                 const string& uploadId) {
     Parameters params = {{"uploadId", uploadId}};
     auto signedHeaders =
-        SignHeaders(config.s3AccessKey, config.s3SecretKey, config.endpoint,
+        SignHeaders(config.s3AccessKey, config.s3SecretKey, "http://nimbus.pawsey.org.au:8080", //config.endpoint,
                     "POST", config.bucket, config.key, "", params);
     Headers headers(begin(signedHeaders), end(signedHeaders));
     WebClient req(config.endpoint, path, "POST", params, headers);
@@ -175,19 +197,25 @@ string UploadPart(const Config& config, const string& path,
 }
 
 void InitConfig(Config& config) {
-    if (!config.s3AccessKey.empty() && !config.s3SecretKey.empty()) return;
-    const string fname = config.credentials.empty()
-                             ? GetHomeDir() + "/.aws/credentials"
-                             : config.credentials;
-    config.awsProfile =
-        config.awsProfile.empty() ? "default" : config.awsProfile;
-    Toml toml = ParseTomlFile(fname);
-    if (toml.find(config.awsProfile) == toml.end()) {
-        throw invalid_argument("ERROR: profile " + config.awsProfile +
-                               " not found");
+    if (config.s3AccessKey.empty() && config.s3SecretKey.empty()) {
+        const string fname = config.credentials.empty()
+                                ? GetHomeDir() + "/.aws/credentials"
+                                : config.credentials;
+        config.awsProfile =
+            config.awsProfile.empty() ? "default" : config.awsProfile;
+        Toml toml = ParseTomlFile(fname);
+        if (toml.find(config.awsProfile) == toml.end()) {
+            throw invalid_argument("ERROR: profile " + config.awsProfile +
+                                " not found");
+        }
+        config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
+        config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
     }
-    config.s3AccessKey = toml[config.awsProfile]["aws_access_key_id"];
-    config.s3SecretKey = toml[config.awsProfile]["aws_secret_access_key"];
+    if(config.endpoint.empty()) throw invalid_argument("Error, empty endpoint");
+    if(NotURL(config.endpoint)) config.endpoints = ReadEndpoints(config.endpoint);
+    else config.endpoints.push_back(config.endpoint);
+    if(config.endpoints.empty()) throw invalid_argument("Error, no endpoints specified");
+    config.endpoint = config.endpoints[0];
 }
 
 //------------------------------------------------------------------------------
@@ -225,8 +253,6 @@ int main(int argc, char const* argv[]) {
             lyra::opt(config.maxRetries, "Max retries")["-r"]["--retries"](
                 "Max number of per-multipart part retries")
                 .optional();
-
-        
 
         // Parse the program arguments:
         auto result = cli.parse({argc, argv});
@@ -283,8 +309,8 @@ int main(int argc, char const* argv[]) {
                 const size_t sz =
                     i != config.jobs - 1 ? chunkSize : lastChunkSize;
                 etags[i] =
-                    async(launch::async, UploadPart, config, path, uploadId,
-                            i, chunkSize * i, sz, config.maxRetries, 1);
+                    async(launch::async, UploadPart, config, path, uploadId, i,
+                          chunkSize * i, sz, config.maxRetries, 1);
             }
             WebClient endUpload =
                 BuildEndUploadRequest(config, path, etags, uploadId);
@@ -315,7 +341,7 @@ int main(int argc, char const* argv[]) {
             }
             if (req.StatusCode() >= 400) {
                 const string errcode = XMLTag(req.GetContentText(), "[Cc]ode");
-                throw runtime_error("Error sending end upload request - " +
+                throw runtime_error("Error sending upload request - " +
                                     errcode);
             }
             const string etag = HTTPHeader(req.GetHeaderText(), "[Ee][Tt]ag");

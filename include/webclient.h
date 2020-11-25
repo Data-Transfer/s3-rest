@@ -370,6 +370,7 @@ class WebClient {
         if (cc == CURLE_SEND_ERROR) {
             const std::string err(begin(errorBuffer_), end(errorBuffer_));
             if (err.find("32") != std::string::npos) return true;
+            if(ToUpper(err).find("PIPE") != std::string::npos) return true;
         }
         return false;
     }

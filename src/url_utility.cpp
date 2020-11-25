@@ -49,7 +49,7 @@ URL ParseURL(const string& s) {
     // minimal version of a URL parser: no enforcement of having the host
     // section start and end with a word and requiring a '.' character
     // separating the individual words.
-    regex e("\\s*(\\w+)://([a-zA-Z-_\\.]+)(:(\\d+))?");
+    regex e("\\s*(\\w+)://([0-9a-zA-Z-_\\.]+)(:(\\d+))?");
     if(!regex_search(s, m, e, regex_constants::match_any)){
         return {};
     }
