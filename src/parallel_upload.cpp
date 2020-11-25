@@ -226,10 +226,11 @@ int main(int argc, char const* argv[]) {
                 "Max number of per-multipart part retries")
                 .optional();
 
-        InitConfig(config);
+        
 
         // Parse the program arguments:
         auto result = cli.parse({argc, argv});
+        InitConfig(config);
 
         if (!result) {
             cerr << result.errorMessage() << endl;
@@ -293,7 +294,7 @@ int main(int argc, char const* argv[]) {
             if (endUpload.StatusCode() >= 400) {
                 const string errcode =
                     XMLTag(endUpload.GetContentText(), "[Cc]ode");
-                throw runtime_error("Error sending end unpload request - " +
+                throw runtime_error("Error sending end upload request - " +
                                     errcode);
             }
             const string etag =
@@ -314,12 +315,12 @@ int main(int argc, char const* argv[]) {
             }
             if (req.StatusCode() >= 400) {
                 const string errcode = XMLTag(req.GetContentText(), "[Cc]ode");
-                throw runtime_error("Error sending end unpload request - " +
+                throw runtime_error("Error sending end upload request - " +
                                     errcode);
             }
             const string etag = HTTPHeader(req.GetHeaderText(), "[Ee][Tt]ag");
             if (etag[0] == '"') {
-                cout << etag.substr(1, etag.size() - 2);
+                cout << etag.substr(1, etag.size() - 2) << endl;
             } else {
                 cout << etag << endl;
             }
