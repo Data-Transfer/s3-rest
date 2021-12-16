@@ -129,7 +129,7 @@ int main(int argc, char const* argv[]) {
     try {
         Args args;
         auto cli =
-            lyra::help(args.showHelp).description("Upload file to S3 bucket") |
+            lyra::help(args.showHelp).description("Download file from S3 bucket") |
             lyra::opt(args.s3AccessKey,
                       "awsAccessKey")["-a"]["--access_key"]("AWS access key")
                 .optional() |
