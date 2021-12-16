@@ -182,7 +182,7 @@ int main(int argc, char const* argv[]) {
             }
             for (auto& i : status) {
                 if (i.get() > 300)
-                    throw runtime_error("Erroe downloading file");
+                    throw runtime_error("Error downloading file");
             }
         } else {
             throw runtime_error("NOT IMPLEMENTED");
