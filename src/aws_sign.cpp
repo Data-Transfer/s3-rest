@@ -47,6 +47,8 @@
 #include "common.h"
 using namespace std;
 
+namespace sss {
+
 //------------------------------------------------------------------------------
 using Bytes = vector<uint8_t>;
 
@@ -332,3 +334,5 @@ Map SignHeaders(const string& accessKey,
     allHeaders.insert({"Authorization", authorizationHeader});
     return allHeaders;
 }
+
+} // namespace sss 

@@ -47,6 +47,8 @@
 #include "webclient.h"
 
 using namespace std;
+using namespace sss;
+
 
 //------------------------------------------------------------------------------
 struct Args {

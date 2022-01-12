@@ -43,6 +43,9 @@
 #include "common.h"
 using namespace std;
 
+
+namespace sss {
+
 //------------------------------------------------------------------------------
 // Break url into {protocol, hostname, port}
 URL ParseURL(const string& s) {
@@ -154,3 +157,4 @@ Map ParseHeaders(const string& s) {
     }
     return params;
 }
+} // namespace sss

@@ -36,6 +36,8 @@
 #include <unordered_map>
 #include <functional>
 
+namespace sss {
+
 using RandomIndex = std::function<int (void)>;
 
 RandomIndex RandomRange(int lowerBound, int upperBound);
@@ -51,3 +53,5 @@ Toml ParseTomlFile(const std::string& filename); //works with AWS format (nested
 
 std::string GetHomeDir();
 void Trim(std::string& s);
+
+}

@@ -37,6 +37,8 @@
 
 #include "common.h"
 
+namespace sss {
+
 using namespace std;
 std::atomic<int> WebClient::numInstances_{0};
 std::mutex WebClient::cleanupMutex_;
@@ -407,3 +409,4 @@ size_t WebClient::BufferReader(void* ptr, size_t size, size_t nmemb,
     inbuffer->offset += size;
     return size;
 }
+} // namespace sss

@@ -53,6 +53,8 @@
 
 #include "utility.h"
 
+namespace sss {
+
 size_t FileSize(const std::string& filename) {
 #ifdef __GNUC__
 #if __GNUC__ > 8
@@ -143,3 +145,4 @@ RandomIndex RandomRange(int lowerBound, int upperBound) {
     std::uniform_int_distribution<int> uniformDist(lowerBound, upperBound);
     return [&]() { return uniformDist(e);};
 }
+} // namespace sss

@@ -40,6 +40,8 @@
 
 using namespace std;
 
+using namespace sss;
+
 //------------------------------------------------------------------------------
 struct Args {
     bool showHelp = false;

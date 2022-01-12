@@ -57,6 +57,7 @@
 #include "url_utility.h"
 #include "utility.h"
 
+namespace sss {
 
 class WebClient {
     using WriteFunction = size_t (*)(char* data, size_t size, size_t nmemb,
@@ -205,3 +206,5 @@ class WebClient {
     static std::atomic<int> numInstances_;
     static std::mutex cleanupMutex_;
 };
+
+}

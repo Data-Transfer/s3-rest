@@ -34,5 +34,9 @@
 #include <regex>
 #include <string>
 
+namespace sss {
+
 std::string XMLTag(const std::string& xml, const std::string& tag);
 std::string HTTPHeader(const std::string& headers, const std::string& header);
+
+}

@@ -38,6 +38,8 @@
 #include <string>
 #include <vector>
 
+namespace sss {
+
 template <class ContainerT>
 void split(const std::string& str, ContainerT& cont,
            const std::string& delims = " ",
@@ -92,3 +94,5 @@ std::string ToLower(std::string s);
 Map ParseParams(std::string s);
 
 Map ParseHeaders(const std::string& s);
+
+}

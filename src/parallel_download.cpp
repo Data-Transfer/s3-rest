@@ -53,6 +53,8 @@
 using namespace std;
 using namespace filesystem;
 
+using namespace sss;
+
 //------------------------------------------------------------------------------
 struct Args {
     bool showHelp = false;

@@ -33,6 +33,8 @@
 #include <regex>
 #include <string>
 
+namespace sss {
+
 std::string XMLTag(const std::string& xml, const std::string& tag) {
     const std::regex rx{tag + "\\s*>\\s*([^\\s<]+)\\s*<"};
     std::smatch sm;
@@ -51,3 +53,5 @@ std::string HTTPHeader(const std::string& headers, const std::string& header) {
     return sm[1];//vector<uint8_t> h = req.GetHeader();
             //string hs(begin(h), end(h));
 }
+
+} // namespace sss

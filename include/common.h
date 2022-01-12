@@ -33,6 +33,11 @@
 #pragma once
 #include <string>
 #include <unordered_map>
+
+namespace sss {
+
 using Map = std::unordered_map<std::string, std::string>;
 using Headers = Map;
 using Parameters = Map;
+
+}

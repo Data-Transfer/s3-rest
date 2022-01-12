@@ -55,6 +55,8 @@
 
 using namespace std;
 
+using namespace sss;
+
 //------------------------------------------------------------------------------
 struct Config {
     bool showHelp = false;

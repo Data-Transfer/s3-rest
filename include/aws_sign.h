@@ -36,6 +36,7 @@
 #include <string>
 #include "common.h"
 
+namespace sss {
 
 std::string SignedURL(const std::string& accessKey,
                       const std::string& secretKey, int expiration,
@@ -70,3 +71,5 @@ struct SignHeadersInfo {
 };
 
 Map SignHeaders(const SignHeadersInfo& hi);
+
+}
