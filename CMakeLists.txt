@@ -53,7 +53,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin/debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin/release)
 
 # Dependencies
-    
+include_directories(${CMAKE_SOURCE_DIR}/include)
+
 include_directories(${CMAKE_SOURCE_DIR}/dep/hash)
 add_subdirectory(dep/hash)
 
