@@ -134,7 +134,7 @@ class WebClient {
 
     long StatusCode() const;
     const std::string& GetUrl() const;
-    const std::vector<uint8_t>& GetContent() const;
+    const std::vector<uint8_t>& GetResponse() const;
     const std::vector<uint8_t>& GetHeader() const;
 
     template <typename T>

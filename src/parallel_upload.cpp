@@ -312,7 +312,7 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error("Error sending begin upload request - " +
                                     errcode);
             }
-            vector<uint8_t> resp = req.GetContent();
+            vector<uint8_t> resp = req.GetResponse();
             const string xml(begin(resp), end(resp));
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
             vector<future<string>> etags(config.jobs);

@@ -188,7 +188,7 @@ int main(int argc, char const* argv[]) {
             req.Send();
         if (of) fclose(of);
         cout << "Status: " << req.StatusCode() << endl;
-        vector<uint8_t> resp = req.GetContent();
+        vector<uint8_t> resp = req.GetResponse();
         string t(begin(resp), end(resp));
         cout << t << endl;
         vector<uint8_t> h = req.GetHeader();

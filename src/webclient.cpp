@@ -149,7 +149,7 @@ void WebClient::SetPostData(const std::string& data) {
 
 long WebClient::StatusCode() const { return responseCode_; }
 const std::string& WebClient::GetUrl() const { return url_; }
-const std::vector<uint8_t>& WebClient::GetContent() const {
+const std::vector<uint8_t>& WebClient::GetResponse() const {
     return writeBuffer_.data;
 }
 const std::vector<uint8_t>& WebClient::GetHeader() const { return headerBuffer_; }
@@ -274,7 +274,7 @@ void WebClient::SetVerbose(bool verbose) {
     curl_easy_setopt(curl_, CURLOPT_VERBOSE, verbose ? 1L : 0);
 }
 std::string WebClient::GetContentText() const {
-    std::vector<uint8_t> content = GetContent();
+    std::vector<uint8_t> content = GetResponse();
     return std::string(begin(content), end(content));
 }
 std::string WebClient::GetHeaderText() const {
