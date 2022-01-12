@@ -40,6 +40,7 @@
 #include <utility>
 #include <vector>
 #include "url_utility.h"
+#include "common.h"
 using namespace std;
 
 //------------------------------------------------------------------------------
@@ -84,7 +85,7 @@ string UrlEncode(const std::string& s) {
 }
 //------------------------------------------------------------------------------
 // Return urlencoded url request parameters from {key, value} dictionary
-string UrlEncode(const map<string, string>& p) {
+string UrlEncode(const Map& p) {
     string url;
     for (auto i : p) {
         url += UrlEncode(i.first) + "=" + UrlEncode(i.second);
@@ -114,11 +115,11 @@ string ToLower(string s) {
 //invoked from both ParseXXX functions.
 //------------------------------------------------------------------------------
 // From "key1=value1;key2=value2;key3=;key4" to {key, value} dictionary
-map<string, string> ParseParams(string s) {
-    if (s.empty()) return map<string, string>();
+Map ParseParams(string s) {
+    if (s.empty()) return Map();
     vector<string> slist;
     split(s, slist, ";");
-    map<string, string> params;
+    Map params;
     for (auto p : slist) {
         vector<string> kv;
         if(p.find_first_of("=") == string::npos)
@@ -138,11 +139,11 @@ map<string, string> ParseParams(string s) {
 // HTTP headers are not case-sensitive and therefore it's better to translate
 // all of them to lower-case to avoid problems when they are places is
 // lexicographic order as part of the S3v4 signing process.
-map<string, string> ParseHeaders(const string& s) {
-    if (s.empty()) return map<string, string>();
+Map ParseHeaders(const string& s) {
+    if (s.empty()) return Map();
     vector<string> slist;
     split(s, slist, ";");
-    map<string, string> params;
+    Map params;
     for (auto p : slist) {
         vector<string> kv;
         split(p, kv, ":", 1);

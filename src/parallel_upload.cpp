@@ -51,6 +51,7 @@
 #include "response_parser.h"
 #include "utility.h"
 #include "webclient.h"
+#include "common.h"
 
 using namespace std;
 
@@ -126,8 +127,8 @@ void Validate(const Config& config) {
 #endif
 }
 
-using Headers = map<string, string>;
-using Parameters = map<string, string>;
+using Headers = Map;
+using Parameters = Map;
 
 atomic<int> numRetriesG{0};
 
@@ -298,7 +299,7 @@ int main(int argc, char const* argv[]) {
             auto signedHeaders = SignHeaders(
                 config.s3AccessKey, config.s3SecretKey, endpoint, "POST",
                 config.bucket, config.key, "", {{"uploads=", ""}});
-            map<string, string> headers(begin(signedHeaders),
+            Map headers(begin(signedHeaders),
                                         end(signedHeaders));
             WebClient req(endpoint, path, "POST", {{"uploads=", ""}}, headers);
             if (!req.Send()) {
@@ -353,7 +354,7 @@ int main(int argc, char const* argv[]) {
             auto signedHeaders =
                 SignHeaders(config.s3AccessKey, config.s3SecretKey, endpoint,
                             "PUT", config.bucket, config.key, "");
-            map<string, string> headers(begin(signedHeaders),
+            Map headers(begin(signedHeaders),
                                         end(signedHeaders));
             WebClient req(config.endpoint, path, "PUT", {}, headers);
             if (!req.UploadFile(config.file)) {

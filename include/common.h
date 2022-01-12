@@ -30,43 +30,9 @@
  *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
-// Public interface to signing URLs and HTTP headers with the S3v4 protocol
-// standard.
 #pragma once
 #include <string>
-#include "common.h"
-
-
-std::string SignedURL(const std::string& accessKey,
-                      const std::string& secretKey, int expiration,
-                      const std::string& endpoint, const std::string& method,
-                      const std::string& bucketName = "",
-                      const std::string& keyName = "",
-                      const Map& params = Map(),
-                      const std::string& region = "us-east-1");
-
-
-Map SignHeaders(const std::string& accessKey, const std::string& secretKey,
-                const std::string& endpoint, const std::string& method,
-                const std::string& bucketName = "",
-                const std::string& keyName = "", std::string payloadHash = "",
-                const Map& parameters = Map(),
-                const Map& additionalHeaders = Map(),
-                const std::string& region = "us-east-1",
-                const std::string& service = "s3");
-
-struct SignHeadersInfo {
-    std::string key;
-    std::string secret;
-    std::string endpoint;
-    std::string method;
-    std::string bucket;
-    std::string bucketKey;
-    std::string payloadHash;
-    Map parameters;
-    Map additionalHeaders;
-    std::string region{"us-east-1"};
-    std::string service{"s3"};
-};
-
-Map SignHeaders(const SignHeadersInfo& hi);
+#include <unordered_map>
+using Map = std::unordered_map<std::string, std::string>;
+using Headers = Map;
+using Parameters = Map;

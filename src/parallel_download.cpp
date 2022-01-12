@@ -48,6 +48,7 @@
 #include "lyra/lyra.hpp"
 #include "response_parser.h"
 #include "webclient.h"
+#include "common.h"
 
 using namespace std;
 using namespace filesystem;
@@ -89,8 +90,8 @@ void Validate(const Args& args) {
 #endif
 }
 
-using Headers = map<string, string>;
-using Parameters = map<string, string>;
+using Headers = Map;
+using Parameters = Map;
 
 size_t ObjectSize(const Args& args, const string& path) {
     auto signedHeaders =

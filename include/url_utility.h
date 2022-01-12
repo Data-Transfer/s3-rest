@@ -32,6 +32,7 @@
 // Declaration and in-line implementation of utility functions to deal with
 // URL and strings.
 #pragma once
+#include "common.h"
 #include <algorithm>
 #include <map>
 #include <string>
@@ -67,7 +68,7 @@ URL ParseURL(const std::string& s);
 
 std::string UrlEncode(const std::string& s);
 
-std::string UrlEncode(const std::map<std::string, std::string>& p);
+std::string UrlEncode(const Map& p);
 
 struct Time {
     std::string timeStamp;
@@ -88,6 +89,6 @@ std::string ToUpper(std::string s);
 
 std::string ToLower(std::string s);
 
-std::map<std::string, std::string> ParseParams(std::string s);
+Map ParseParams(std::string s);
 
-std::map<std::string, std::string> ParseHeaders(const std::string& s);
+Map ParseHeaders(const std::string& s);
