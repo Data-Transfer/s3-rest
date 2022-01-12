@@ -36,6 +36,7 @@
 #include "aws_sign.h"
 #include "url_utility.h"
 #include "lyra/lyra.hpp"
+#include "common.h"
 
 using namespace std;
 
@@ -104,9 +105,9 @@ int main(int argc, char const* argv[]) {
         return 0;
     }
     // PrintArgs(args);
-    const map<string, string> params = ParseParams(args.params); 
-    const map<string, string> headers = ParseHeaders(args.headers);
-    const map<string, string> signedHeaders = SignHeaders(
+    const Map params = ParseParams(args.params); 
+    const Map headers = ParseHeaders(args.headers);
+    const Map signedHeaders = SignHeaders(
         args.awsAccessKey, args.awsSecretKey, args.endpoint, args.method,
         args.bucket, args.key, args.payloadHash, params, headers);
     for(auto kv: signedHeaders) {

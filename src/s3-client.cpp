@@ -34,7 +34,8 @@
 
 // Send S3v4 signed REST requests
 
-#include <aws_sign.h>
+#include "aws_sign.h"
+#include "common.h"
 
 #include <iostream>
 #include <regex>
@@ -143,8 +144,8 @@ int main(int argc, char const* argv[]) {
             path += "/" + args.bucket;
             if (!args.key.empty()) path += "/" + args.key;
         }
-        const map<string, string> params = ParseParams(args.params);
-        map<string, string> headers = ParseHeaders(args.headers);
+        const Map params = ParseParams(args.params);
+        Map headers = ParseHeaders(args.headers);
         if (!args.s3AccessKey.empty()) {
             auto signedHeaders = SignHeaders(
                 args.s3AccessKey, args.s3SecretKey, args.endpoint, args.method,

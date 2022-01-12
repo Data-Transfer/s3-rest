@@ -36,6 +36,7 @@
 #include "aws_sign.h"
 #include "url_utility.h"
 #include "lyra/lyra.hpp"
+#include "common.h"
 
 using namespace std;
 
@@ -104,7 +105,7 @@ int main(int argc, char const* argv[]) {
         return 0;
     }
     //PrintArgs(args);
-    const map<string, string> params = ParseParams(args.params); 
+    const Map params = ParseParams(args.params); 
     const string signedURL =
         SignedURL(args.awsAccessKey, args.awsSecretKey, args.expiration,
                   args.endpoint, ToUpper(args.method), args.bucket, args.key);
