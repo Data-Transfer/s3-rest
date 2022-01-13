@@ -30,6 +30,12 @@
  *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
+/**
+ * \file common.h
+ * \brief Common definitions
+ * 
+*/
+
 #pragma once
 #include <string>
 #include <unordered_map>
@@ -39,5 +45,5 @@ namespace sss {
 using Map = std::unordered_map<std::string, std::string>;
 using Headers = Map;
 using Parameters = Map;
-
-}
+ 
+} // namespace sss

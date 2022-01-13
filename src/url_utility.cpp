@@ -114,7 +114,7 @@ string ToLower(string s) {
     return s;
 }
 
-//TODO: create StringToDict(const string&, const string& delims) funciton to be
+//@todo: create StringToDict(const string&, const string& delims) function to be
 //invoked from both ParseXXX functions.
 //------------------------------------------------------------------------------
 // From "key1=value1;key2=value2;key3=;key4" to {key, value} dictionary

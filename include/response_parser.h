@@ -29,6 +29,10 @@
 * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
+/**
+ * \file response_parser.h
+ * \brief Functions to parse XML and HTTP headers. 
+ */
 #pragma once
 
 #include <regex>
@@ -36,7 +40,15 @@
 
 namespace sss {
 
+/// Extract and return content of XML tag
+/// \param xml XML text
+/// \param tag \c <tag> name
+/// \return \c <tag> content
 std::string XMLTag(const std::string& xml, const std::string& tag);
+
+/// Extract and return HTTP header
+/// \param headers text containing the header section of an HTTP payload
+/// \param header header name
 std::string HTTPHeader(const std::string& headers, const std::string& header);
 
 }

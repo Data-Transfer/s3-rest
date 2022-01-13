@@ -30,28 +30,62 @@
  *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
+///@todo move into "details" namespace
+
+/**
+ * \file utility.h
+ * \brief internal utility functions
+*/
+
 #pragma once
 
 #include <string>
 #include <unordered_map>
 #include <functional>
 
+/**
+ * \ingroup internal
+ * @{
+ */
+
 namespace sss {
 
+/// Random index generator; MT 19937 used internally
 using RandomIndex = std::function<int (void)>;
 
+/// Return integer in [low,high] range
+/// \param lowerBound lower bound
+/// \param upperBound upper bound
+/// \return function returnigg index between \c lowerBound and \c upperBound
 RandomIndex RandomRange(int lowerBound, int upperBound);
 
+/// Return file size
+/// \param filename file name
+/// \return file size in number of bytes
 size_t FileSize(const std::string& filename);
 
 using Dict = std::unordered_map<std::string, std::string>;
 using Toml = std::unordered_map<std::string, Dict>;
 
-Toml ParseTomlFile(const std::string& filename); //works with AWS format (nested s'=')
-                                            //parent key added to child key
-                                            //as '<parent key>/'
+/// Parse \e Toml file in AWS format and return tree as map of maps 
+///
+/// Works with AWS format (nested s'=')
+/// Parent key is added added to child key: <parent key>/<child_key>'
+/// \param filename location of configuration file 
+/// \return \e Toml content
+Toml ParseTomlFile(const std::string& filename); 
 
+/// Return home directory
+/// \return home directory path
 std::string GetHomeDir();
+
+/// Remove leading and trailing blanks
+/// \return trimmed string
 void Trim(std::string& s);
 
 }
+
+/**
+ * @}
+ * 
+ */
