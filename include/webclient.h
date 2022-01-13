@@ -93,10 +93,8 @@ class WebClient {
     WebClient(const std::string& url) : url_(url), method_("GET") { InitEnv(); }
     WebClient(const std::string& ep, const std::string& path,
               const std::string& method = "GET",
-              const Map params =
-                  Map(),
-              const Map headers =
-                  Map())
+              const Map params = Map(),
+              const Map headers = Map())
         : endpoint_(ep),
           path_(path),
           method_(method),
@@ -106,6 +104,7 @@ class WebClient {
     }
     ~WebClient();
     bool Send();
+    bool SSLVerify(bool verifyPeer, bool verifyHost = true);
     bool SetUrl(const std::string& url);
     void SetEndpoint(const std::string& ep);
     void SetPath(const std::string& path);
@@ -175,7 +174,7 @@ class WebClient {
     bool Status(CURLcode cc) const;
     void InitEnv();
     bool Init();
-    void BuildURL();
+    bool BuildURL();
     static size_t Writer(char* data, size_t size, size_t nmemb,
                          Buffer* outbuffer);
     static size_t HeaderWriter(char* data, size_t size, size_t nmemb,

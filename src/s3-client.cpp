@@ -34,28 +34,27 @@
 
 // Send S3v4 signed REST requests
 
-#include "aws_sign.h"
-#include "common.h"
-
+#include <fstream>
 #include <iostream>
 #include <regex>
 #include <set>
-#include <fstream>
 #include <streambuf>
 
+#include "aws_sign.h"
+#include "common.h"
 #include "lyra/lyra.hpp"
 #include "webclient.h"
 
 using namespace std;
 using namespace sss;
 
-
 //------------------------------------------------------------------------------
 struct Args {
     bool showHelp = false;
     string s3AccessKey;
     string s3SecretKey;
-    string endpoint;
+    string endpoint;  // actual endpoint where requests are sent
+    string signUrl;   // url used to sign, allows request to work across tunnels
     string bucket;
     string key;
     string params;
@@ -91,7 +90,8 @@ void Validate(const Args& args) {
     const set<string> methods({"get", "put", "post", "delete", "head"});
     if (methods.count(ToLower(args.method)) == 0) {
         throw invalid_argument(
-            "ERROR: only 'get', 'put', 'post', 'delete', 'head' methods supported");
+            "ERROR: only 'get', 'put', 'post', 'delete', 'head' methods "
+            "supported");
     }
 }
 
@@ -109,7 +109,7 @@ int main(int argc, char const* argv[]) {
                       "awsSecretKey")["-s"]["--secret_key"]("AWS secret key")
                 .optional() |
             lyra::opt(args.endpoint,
-                      "endpoint")["-e"]["--endpoint"]("Endpoing URL")
+                      "endpoint")["-e"]["--endpoint"]("End-point URL")
                 .required() |
             lyra::opt(args.method, "method")["-m"]["--method"](
                 "HTTP method: get | put | post | delete | head")
@@ -127,7 +127,12 @@ int main(int argc, char const* argv[]) {
                 "URL request headers. header1:value1;header2:...")
                 .optional() |
             lyra::opt(args.outfile,
-                      "output")["-o"]["--out-file"]("output file");
+                      "output file")["-o"]["--out-file"]("output file")
+                .optional() |
+            lyra::opt(args.signUrl, "signing url")["-S"]["--sign-url"](
+                "URL for signing; can be different from endpoint to support "
+                "tunnels")
+                .optional();
 
         // Parse the program arguments:
         auto result = cli.parse({argc, argv});
@@ -141,6 +146,12 @@ int main(int argc, char const* argv[]) {
             return 0;
         }
         Validate(args);
+        // verify peer and host certificate only if signing url == endpoint
+        const bool verify = args.signUrl.empty();
+        ///\warning disabling verification for both peer and host
+        const bool verifyHost = verify;
+        const bool verifyPeer = verify;
+        if (args.signUrl.empty()) args.signUrl = args.endpoint;
         string path;
         if (!args.bucket.empty()) {
             path += "/" + args.bucket;
@@ -150,11 +161,12 @@ int main(int argc, char const* argv[]) {
         Map headers = ParseHeaders(args.headers);
         if (!args.s3AccessKey.empty()) {
             auto signedHeaders = SignHeaders(
-                args.s3AccessKey, args.s3SecretKey, args.endpoint, args.method,
+                args.s3AccessKey, args.s3SecretKey, args.signUrl, args.method,
                 args.bucket, args.key, "", params, headers);
             headers.insert(begin(signedHeaders), end(signedHeaders));
         }
         WebClient req(args.endpoint, path, args.method, params, headers);
+        req.SSLVerify(verifyPeer, verifyHost);
         FILE* of = NULL;
         if (!args.outfile.empty()) {
             of = fopen(args.outfile.c_str(), "wb");
@@ -171,9 +183,9 @@ int main(int argc, char const* argv[]) {
                 }
                 req.Send();
             } else {
-                if(ToLower(args.method) == "put") {
+                if (ToLower(args.method) == "put") {
                     req.UploadFile(args.data.substr(1));
-                } else if(args.method == "post") {
+                } else if (args.method == "post") {
                     ifstream t(args.data.substr(1));
                     const string str((istreambuf_iterator<char>(t)),
                                      istreambuf_iterator<char>());
@@ -201,113 +213,6 @@ int main(int argc, char const* argv[]) {
     }
 }
 
-// HEADERS
-// static size_t header_callback(char *buffer, size_t size,
-//                               size_t nitems, void *userdata)
-// {
-//   /* received header is nitems * size long in 'buffer' NOT ZERO TERMINATED */
-//   /* 'userdata' is set with CURLOPT_HEADERDATA */
-//   return nitems * size;
-// }
-
-// CURL *curl = curl_easy_init();
-// if(curl) {
-//   curl_easy_setopt(curl, CURLOPT_URL, "http://example.com");
-
-//   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
-
-//   curl_easy_perform(curl);
-// }
-
-// STATUS CODE
-// CURL *curl = curl_easy_init();
-// if(curl) {
-//   CURLcode res;
-//   curl_easy_setopt(curl, CURLOPT_URL, "http://example.com");
-//   res = curl_easy_perform(curl);
-//   if(res == CURLE_OK) {
-//     long response_code;
-//     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-//   }
-//   curl_easy_cleanup(curl);
-// }
-
-// URLENCODE
-// CURL *curl = curl_easy_init();
-// if(curl) {
-//   char *output = curl_easy_escape(curl, "data to convert", 15);
-//   if(output) {
-//     printf("Encoded: %s\n", output);
-//     curl_free(output);
-//   }
-// }
-
-// KEEP ALIVE
-// CURL *curl = curl_easy_init();
-// if(curl) {
-//   curl_easy_setopt(curl, CURLOPT_URL, "http://example.com");
-
-//   /* enable TCP keep-alive for this transfer */
-//   curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-
-//   /* keep-alive idle time to 120 seconds */
-//   curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 120L);
-
-//   /* interval time between keep-alive probes: 60 seconds */
-//   curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 60L);
-
-//   curl_easy_perform(curl);
-// }
-
-// POST URLENCODED FORM DATA
-// CURL *curl = curl_easy_init();
-// if(curl) {
-//   const char *data = "data to send";
-
-//   curl_easy_setopt(curl, CURLOPT_URL, "http://example.com");
-
-//   /* size of the POST data */
-//   curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 12L);
-
-//   /* pass in a pointer to the data - libcurl will not copy */
-//   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
-
-//   curl_easy_perform(curl);
-// }
-
-// UPLOAD FILE > 2GB WITH PUT
-// CURL *curl = curl_easy_init();
-// if(curl) {
-//   /* we want to use our own read function */
-//   curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
-
-//   /* enable uploading */
-//   curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-
-//   /* specify target */
-//   curl_easy_setopt(curl, CURLOPT_URL, "ftp://example.com/dir/to/newfile");
-
-//   /* now specify which pointer to pass to our callback */
-//   curl_easy_setopt(curl, CURLOPT_READDATA, hd_src);
-
-//   /* Set the size of the file to upload */
-//   curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)fsize);
-
-//   /* Now run off and do what you've been told! */
-//   curl_easy_perform(curl);
-// }
-
-// UPLOAD FILE <= 2GB
-// CURL *curl = curl_easy_init();
-// if(curl) {
-//   long uploadsize = FILE_SIZE;
-
-//   curl_easy_setopt(curl, CURLOPT_URL,
-//   "ftp://example.com/destination.tar.gz");
-
-//   curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-
-//   curl_easy_setopt(curl, CURLOPT_INFILESIZE, uploadsize);
-
-//   curl_easy_perform(curl);
-// }
+// to use a tunnel:
+// ssh -f -i /home/ubuntu/.ssh/id_rsa -L 127.0.0.1:8080:<final endpoint>:8080 \
+// -N <username>o@<server behind the firewall>

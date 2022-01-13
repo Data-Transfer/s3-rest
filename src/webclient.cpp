@@ -101,6 +101,15 @@ void WebClient::SetPath(const std::string& path) {
     path_ = path;
     BuildURL();
 }
+
+bool WebClient::SSLVerify(bool verifyPeer, bool verifyHost) {
+    return Status(curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYPEER,
+                                   verifyPeer ? 1L : 0L)) &&
+           ///@warning insecure!!!
+           Status(curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYHOST,
+                                   verifyHost ? 1L : 0L));
+}
+
 void WebClient::SetHeaders(const Map& headers) {
     headers_ = headers;
     if (curlHeaderList_) {
@@ -152,7 +161,9 @@ const std::string& WebClient::GetUrl() const { return url_; }
 const std::vector<uint8_t>& WebClient::GetResponse() const {
     return writeBuffer_.data;
 }
-const std::vector<uint8_t>& WebClient::GetHeader() const { return headerBuffer_; }
+const std::vector<uint8_t>& WebClient::GetHeader() const {
+    return headerBuffer_;
+}
 
 void WebClient::SetUploadData(const std::vector<uint8_t>& data) {
     readBuffer_.data = data;
@@ -282,7 +293,7 @@ std::string WebClient::GetHeaderText() const {
     return std::string(begin(header), end(header));
 }
 
-//private:
+// private:
 bool WebClient::Status(CURLcode cc) const {
     if (cc == 0) return true;
     // deal with "SSL_write() returned SYSCALL, errno = 32"
@@ -359,12 +370,12 @@ handle_error:
     throw(std::runtime_error(errorBuffer_.data()));
     return false;
 }
-void WebClient::BuildURL() {
+bool WebClient::BuildURL() {
     url_ = endpoint_ + path_;
     if (!params_.empty()) {
         url_ += "?" + UrlEncode(params_);
     }
-    SetUrl(url_);
+    return SetUrl(url_);
 }
 size_t WebClient::Writer(char* data, size_t size, size_t nmemb,
                          Buffer* outbuffer) {
@@ -409,4 +420,4 @@ size_t WebClient::BufferReader(void* ptr, size_t size, size_t nmemb,
     inbuffer->offset += size;
     return size;
 }
-} // namespace sss
+}  // namespace sss
