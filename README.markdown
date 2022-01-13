@@ -25,8 +25,6 @@ on a complex mechanism which requires describing the instance first by
 invoking an `ec2` command and it won't work with standalone *Ceph*
 deployments.
 
-Other tools require passing credentials on the command line.
-
 Originally developed to test *Ceph* object storage.
 
 The default *CMake* configuration generates static executables.
