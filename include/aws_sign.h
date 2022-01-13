@@ -80,4 +80,4 @@ struct SignHeadersInfo {
 /// instead of multiple parameters
 Map SignHeaders(const SignHeadersInfo& hi);
 
-} // namespace sss
+} // namespace

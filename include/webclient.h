@@ -66,14 +66,14 @@ class WebClient {
                                     void* userdata);
 
     struct Buffer {
-        size_t offset = 0;          // pointer to next insertion point
-        std::vector<uint8_t> data;  // buffer
+        size_t offset = 0;          ///< pointer to next insertion point
+        std::vector<uint8_t> data;  ///< buffer
     };
 
     struct ReadBuffer {
-        size_t offset = 0;  // pointer to next insertion point
-        const char* data;   // buffer
-        size_t size = 0;    // buffer size
+        size_t offset = 0;  ///< pointer to next insertion point
+        const char* data;   ///< buffer
+        size_t size = 0;    ///< buffer size
     };
 
    public:
