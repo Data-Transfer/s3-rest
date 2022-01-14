@@ -446,6 +446,9 @@ bool WebClient::Init() {
     if (curl_easy_setopt(curl_, CURLOPT_NOPROGRESS, 1L) != CURLE_OK) {
         goto handle_error;
     };
+    if(curl_easy_setopt(curl_, CURLOPT_ACCEPT_ENCODING, "") != CURLE_OK){
+        goto handle_error;
+    }
     if (method_.size()) {
         SetMethod(method_);
     }
