@@ -30,45 +30,76 @@
  *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
+/**
+ * \file webclient.cpp
+ * \brief implementation of WebClient class, wrapper around libcurl
+*/
+
 #include "webclient.h"
 
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <fstream>
 #include <iostream>
+#include <stdexcept>
+//#ifdef IGNORE_SIGPIPE REQUIRED!
+#include <signal.h>
+//#endif
 
 #include "common.h"
 
 namespace sss {
 
 using namespace std;
+
+// Track number of instances created.
 std::atomic<int> WebClient::numInstances_{0};
+// Used to serialize access to init and cleanup libcurl functions, guaranteeing
+// tha only one init and one cleanup happens.
 std::mutex WebClient::cleanupMutex_;
 
+// All the following functions are invoked from libcurl and the FILE* pointer
+// is moved to the proper offset before the functions are passed to libcurl
+/** \addtogroup internal
+ * @{
+ */
+/// Read from file
 size_t ReadFile(void* ptr, size_t size, size_t nmemb, void* userdata) {
     FILE* f = static_cast<FILE*>(userdata);
     if (ferror(f)) return CURL_READFUNC_ABORT;
     return fread(ptr, size, nmemb, f) * size;
 }
-
+/// Read from file using unbuffered I/O
 size_t ReadFileUnbuffered(void* ptr, size_t size, size_t nmemb,
                           void* userdata) {
     const int fd = *static_cast<int*>(userdata);
     return max(ssize_t(0), read(fd, ptr, size * nmemb));
 }
-
+/// Write to file
 size_t WriteFile(char* ptr, size_t size, size_t nmemb, void* userdata) {
     FILE* writehere = static_cast<FILE*>(userdata);
     size = size * nmemb;
     fwrite(ptr, size, nmemb, writehere);
     return size;
 }
-
+/// Write to file using unbuffered I/O
 size_t WriteFileUnbuffered(char* ptr, size_t size, size_t nmemb,
                            void* userdata) {
     const int fd = *static_cast<int*>(userdata);
     return max(ssize_t(0), write(fd, ptr, size * nmemb));
 }
+/**
+ * @}
+ */
 
 // public:
+/// Cleanup and invoke cleanup on libcurl in case of last instance
 WebClient::~WebClient() {
     if (curlHeaderList_) {
         curl_slist_free_all(curlHeaderList_);
@@ -84,24 +115,15 @@ WebClient::~WebClient() {
         if (numInstances_ == 0) curl_global_cleanup();
     }
 }
+// Send request
 bool WebClient::Send() {
     const bool ret = Status(curl_easy_perform(curl_));
     curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &responseCode_);
     return ret;
 }
-bool WebClient::SetUrl(const std::string& url) {
-    url_ = url;
-    return curl_easy_setopt(curl_, CURLOPT_URL, url_.c_str()) == CURLE_OK;
-}
-void WebClient::SetEndpoint(const std::string& ep) {
-    endpoint_ = ep;
-    BuildURL();
-}
-void WebClient::SetPath(const std::string& path) {
-    path_ = path;
-    BuildURL();
-}
-
+// Set SSL verification options: peer and/or host
+// It is useful to disable everything when sending https requests through 
+// e.g. httos tunnel
 bool WebClient::SSLVerify(bool verifyPeer, bool verifyHost) {
     return Status(curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYPEER,
                                    verifyPeer ? 1L : 0L)) &&
@@ -109,7 +131,22 @@ bool WebClient::SSLVerify(bool verifyPeer, bool verifyHost) {
            Status(curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYHOST,
                                    verifyHost ? 1L : 0L));
 }
-
+// Set full URL
+bool WebClient::SetUrl(const std::string& url) {
+    url_ = url;
+    return curl_easy_setopt(curl_, CURLOPT_URL, url_.c_str()) == CURLE_OK;
+}
+// Set endpoint: <proto>://<server>:<port>
+void WebClient::SetEndpoint(const std::string& ep) {
+    endpoint_ = ep;
+    BuildURL();
+}
+// Set URL path /.../...
+void WebClient::SetPath(const std::string& path) {
+    path_ = path;
+    BuildURL();
+}
+// Store headers internally
 void WebClient::SetHeaders(const Map& headers) {
     headers_ = headers;
     if (curlHeaderList_) {
@@ -124,10 +161,12 @@ void WebClient::SetHeaders(const Map& headers) {
     }
     curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, curlHeaderList_);
 }
+// Regenerate URL with new parameters
 void WebClient::SetReqParameters(const Map& params) {
     params_ = params;
     BuildURL();
 }
+// Set HTTP method
 void WebClient::SetMethod(const std::string& method, size_t size) {
     method_ = ToUpper(method);
     if (method_ == "GET") {
@@ -150,31 +189,67 @@ void WebClient::SetMethod(const std::string& method, size_t size) {
         curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "PUT");
     }
 }
-
+// Url-encode and store data be posted from {key,value} map
+void WebClient::SetUrlEncodedPostData(const Map& postData) {
+    urlEncodedPostData_ = UrlEncode(postData);
+    curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, urlEncodedPostData_.size());
+    curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS,
+                     urlEncodedPostData_.c_str());
+}
+// Url-encode and store data to be posted from text
+void WebClient::SetUrlEncodedPostData(const std::string& postData) {
+    urlEncodedPostData_ = UrlEncode(postData);
+    curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, urlEncodedPostData_.size());
+    curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS,
+                     urlEncodedPostData_.c_str());
+}
+// Set url-encoded data to be posted
 void WebClient::SetPostData(const std::string& data) {
     curl_easy_setopt(curl_, CURLOPT_POSTFIELDSIZE, data.size());
     curl_easy_setopt(curl_, CURLOPT_COPYPOSTFIELDS, data.c_str());
 }
-
+// Return status code of last executed request
 long WebClient::StatusCode() const { return responseCode_; }
+// Return full URL
 const std::string& WebClient::GetUrl() const { return url_; }
-const std::vector<uint8_t>& WebClient::GetResponse() const {
+// Return response content
+const std::vector<uint8_t>& WebClient::GetResponseBody() const {
     return writeBuffer_.data;
 }
-const std::vector<uint8_t>& WebClient::GetHeader() const {
+// Return raw header buffer
+const std::vector<uint8_t>& WebClient::GetResponseHeader() const {
     return headerBuffer_;
 }
-
+// Set write function to use to write received data
+bool WebClient::SetWriteFunction(WriteFunction f, void* ptr) {
+    if (curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, f) != CURLE_OK)
+        return false;
+    if (curl_easy_setopt(curl_, CURLOPT_WRITEDATA, ptr) != CURLE_OK)
+        return false;
+    return true;
+}
+// Set read function to use to read data to be sent
+bool WebClient::SetReadFunction(ReadFunction f, void* ptr) {
+    if (curl_easy_setopt(curl_, CURLOPT_READFUNCTION, f) != CURLE_OK)
+        return false;
+    if (curl_easy_setopt(curl_, CURLOPT_READDATA, ptr) != CURLE_OK)
+        return false;
+    return true;
+}
+// Fill buffer with data to be uploaded
 void WebClient::SetUploadData(const std::vector<uint8_t>& data) {
     readBuffer_.data = data;
     readBuffer_.offset = 0;
 }
+// Upload entire file
 bool WebClient::UploadFile(const std::string& fname, size_t fsize) {
     const size_t size = fsize ? fsize : FileSize(fname);
     FILE* file = fopen(fname.c_str(), "rb");
     if (!file) {
         throw std::runtime_error("Cannot open file " + fname);
     }
+    // when read function is NULL the passed void* is interpreted as
+    // a FILE* by libcurl
     if (!SetReadFunction(NULL, file)) {
         throw std::runtime_error("Cannot set read function");
     }
@@ -187,10 +262,10 @@ bool WebClient::UploadFile(const std::string& fname, size_t fsize) {
     fclose(file);
     return result;
 }
+// Upload content from memory buffer, equivalent to uploading file from memory
 bool WebClient::UploadDataFromBuffer(const char* data, size_t offset,
                                      size_t size) {
-    if (curl_easy_setopt(curl_, CURLOPT_READFUNCTION, BufferReader) !=
-        CURLE_OK) {
+    if (curl_easy_setopt(curl_, CURLOPT_READFUNCTION, MemReader) != CURLE_OK) {
         throw std::runtime_error("Cannot set curl read function");
     }
     if (curl_easy_setopt(curl_, CURLOPT_READDATA, &refBuffer_) != CURLE_OK) {
@@ -202,6 +277,7 @@ bool WebClient::UploadDataFromBuffer(const char* data, size_t offset,
     SetMethod("PUT", size);
     return Send();
 }
+// Upload file starting at offset
 bool WebClient::UploadFile(const std::string& fname, size_t offset,
                            size_t size) {
     FILE* file = fopen(fname.c_str(), "rb");
@@ -223,6 +299,7 @@ bool WebClient::UploadFile(const std::string& fname, size_t offset,
     fclose(file);
     return result;
 }
+// Upload file starting at offset, using unbuffered I/O
 bool WebClient::UploadFileUnbuffered(const std::string& fname, size_t offset,
                                      size_t size) {
     int file = open(fname.c_str(), S_IRGRP | O_LARGEFILE);
@@ -244,6 +321,7 @@ bool WebClient::UploadFileUnbuffered(const std::string& fname, size_t offset,
     close(file);
     return result;
 }
+// Upload memory mapped file
 bool WebClient::UploadFileMM(const std::string& fname, size_t offset,
                              size_t size) {
     int fd = open(fname.c_str(), O_RDONLY | O_LARGEFILE);
@@ -274,26 +352,36 @@ bool WebClient::UploadFileMM(const std::string& fname, size_t offset,
     }
     return true;
 }
+// Return libcurl error.
 std::string WebClient::ErrorMsg() const { return errorBuffer_.data(); }
+// Passthrough to curl_easy_setopt
+// https://curl.se/libcurl/c/curl_easy_setopt.html
 CURLcode WebClient::SetOpt(CURLoption option, va_list argp) {
     return curl_easy_setopt(curl_, option, argp);
 }
+// Passthrough method to curl_easy_getinfo
+// https://curl.se/libcurl/c/curl_easy_getinfo.html
 CURLcode WebClient::GetInfo(CURLINFO info, va_list argp) {
     return curl_easy_getinfo(curl_, info, argp);
 }
+// Enable verbose mode
 void WebClient::SetVerbose(bool verbose) {
     curl_easy_setopt(curl_, CURLOPT_VERBOSE, verbose ? 1L : 0);
 }
+// Returns content as text
 std::string WebClient::GetContentText() const {
-    std::vector<uint8_t> content = GetResponse();
+    std::vector<uint8_t> content = GetResponseBody();
     return std::string(begin(content), end(content));
 }
+// Returns headers as text
 std::string WebClient::GetHeaderText() const {
-    std::vector<uint8_t> header = GetHeader();
+    std::vector<uint8_t> header = GetResponseHeader();
     return std::string(begin(header), end(header));
 }
 
 // private:
+
+// @warning !!!HACK Check status and discards SIGPIPE errors
 bool WebClient::Status(CURLcode cc) const {
     if (cc == 0) return true;
     // deal with "SSL_write() returned SYSCALL, errno = 32"
@@ -304,13 +392,18 @@ bool WebClient::Status(CURLcode cc) const {
     }
     return false;
 }
+// Initializes libcurl, makes sure curl_global_init() is called only by the
+// first instance
 void WebClient::InitEnv() {
-    // first thread initializes curl the others wait until
-    // initialization is complete
+    //disable SIGPIPE signal per-thread
+    const struct sigaction sa{SIG_IGN};
+    sigaction(SIGPIPE, &sa, NULL);
+    // first thread initializes curl, the others wait until
+    // initialization is complete; the same mutex is used to initialize
+    // and cleanup, see ~WebClient().
     // NOTE: libcurl initialization and cleanup are not thread safe,
-    // this code just guarantees that curl_global_init is called ony
-    // once TODO: with lock and numInstances_ variable globalInit
-    // useless --> remove
+    // this code just guarantees that curl_global_init is called only
+    // once
     const std::lock_guard<std::mutex> lock(cleanupMutex_);
     if (numInstances_ == 0) {
         if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
@@ -320,6 +413,7 @@ void WebClient::InitEnv() {
     ++numInstances_;
     Init();
 }
+// Initialize curl internal state
 bool WebClient::Init() {
     curl_ = curl_easy_init();
     // curl_easy_setopt(curl_, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
@@ -345,6 +439,7 @@ bool WebClient::Init() {
         goto handle_error;
     if (curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &headerBuffer_) != CURLE_OK)
         goto handle_error;
+    // disable signal handlers
     if (curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L) != CURLE_OK) {
         goto handle_error;
     }
@@ -370,6 +465,7 @@ handle_error:
     throw(std::runtime_error(errorBuffer_.data()));
     return false;
 }
+// Build URL from <proto>://<server>:<port> AND /<path>
 bool WebClient::BuildURL() {
     url_ = endpoint_ + path_;
     if (!params_.empty()) {
@@ -377,6 +473,7 @@ bool WebClient::BuildURL() {
     }
     return SetUrl(url_);
 }
+// Writer function: appends received content to buffer.
 size_t WebClient::Writer(char* data, size_t size, size_t nmemb,
                          Buffer* outbuffer) {
     assert(outbuffer);
@@ -386,6 +483,7 @@ size_t WebClient::Writer(char* data, size_t size, size_t nmemb,
     outbuffer->offset += size;
     return size;
 }
+// Writer function for headers: appends response headers to buffer.
 size_t WebClient::HeaderWriter(char* data, size_t size, size_t nmemb,
                                std::vector<uint8_t>* writerData) {
     assert(writerData);
@@ -393,31 +491,54 @@ size_t WebClient::HeaderWriter(char* data, size_t size, size_t nmemb,
                        (uint8_t*)data + size * nmemb);
     return size * nmemb;
 }
-size_t WebClient::Reader(void* ptr, size_t size, size_t nmemb,
-                         Buffer* inbuffer) {
-    const auto b = begin(inbuffer->data) + inbuffer->offset;
-    if (b >= end(inbuffer->data)) {
-        return 0;
+// Reader function, writes data to be sent into outPtr buffer in chunks.
+// Data is read from vector<> inside buffer object and read offset
+// updated after each read operation
+size_t WebClient::Reader(void* outPtr, size_t size, size_t nmemb,
+                         Buffer* inBuffer) {
+    // start element
+    const auto b = begin(inBuffer->data) + inBuffer->offset;
+    if (b >= end(inBuffer->data)) {
+        return 0;  // 0 marks the end of buffer
     }
+    // chunk size in bytes = block size (size) x number of blocks(nmemb)
     size = size * nmemb;
-    const auto e = std::min(b + size, end(inbuffer->data));
-    std::copy(b, e, (uint8_t*)ptr);
+    // end point min between end of buffer and start + chunk size
+    const auto e = std::min(b + size, end(inBuffer->data));
+    // copy from vector into curl internal buffer
+    std::copy(b, e, (uint8_t*)outPtr);
+    // update offset
     size = size_t(e - b);
-    inbuffer->offset += size;
+    inBuffer->offset += size;
     return size;
 }
-size_t WebClient::BufferReader(void* ptr, size_t size, size_t nmemb,
-                               ReadBuffer* inbuffer) {
-    const auto b = inbuffer->data + inbuffer->offset;
-    const auto end = inbuffer->data + inbuffer->offset + inbuffer->size;
+// Same as Reader but needs to read from memory, not vector, this way
+// we can point to generic memory regions.
+size_t WebClient::MemReader(void* ptr, size_t size, size_t nmemb,
+                            MemReadBuffer* inBuffer) {
+    // start element
+    const auto b = inBuffer->data + inBuffer->offset;
+    // one past last element
+    const auto end = inBuffer->data + inBuffer->offset + inBuffer->size;
     if (b >= end) {
-        return 0;
+        return 0;  // 0 marks the end of buffer
     }
+    // chunk size in bytes = block size (size) x number of blocks(nmemb)
     size = size * nmemb;
+    // end point min between end of buffer and start + chunk size
     const auto e = std::min(b + size, end);
+    // copy from memory into curl internal buffer
     std::copy(b, e, (char*)ptr);
+    // update offset
     size = size_t(e - b);
-    inbuffer->offset += size;
+    inBuffer->offset += size;
     return size;
 }
+
+// Redirect stderr to file. Returns \c false when it fails.
+bool WebClient::RedirectSTDErr(FILE* f) {
+    return curl_easy_setopt(curl_, CURLOPT_STDERR, f) == CURLE_OK;
+}
+
+
 }  // namespace sss

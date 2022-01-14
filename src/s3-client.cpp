@@ -200,10 +200,10 @@ int main(int argc, char const* argv[]) {
             req.Send();
         if (of) fclose(of);
         cout << "Status: " << req.StatusCode() << endl;
-        vector<uint8_t> resp = req.GetResponse();
+        vector<uint8_t> resp = req.GetResponseBody();
         string t(begin(resp), end(resp));
         cout << t << endl;
-        vector<uint8_t> h = req.GetHeader();
+        vector<uint8_t> h = req.GetResponseHeader();
         string hs(begin(h), end(h));
         cout << hs << endl;
         return 0;

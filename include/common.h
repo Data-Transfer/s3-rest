@@ -38,11 +38,14 @@
 
 #pragma once
 #include <string>
-#include <unordered_map>
+#include <map>
+//#include <unordered_map>
 
 namespace sss {
 
-using Map = std::unordered_map<std::string, std::string>;
+///@todo review and use unordered_map when parameters do not need to be in
+///alphabetical order
+using Map = std::map<std::string, std::string>;
 using Headers = Map;
 using Parameters = Map;
  

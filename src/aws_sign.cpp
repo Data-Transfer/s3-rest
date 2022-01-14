@@ -39,12 +39,12 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <stdexcept>
 
-#include "url_utility.h"
 #include "common.h"
+#include "url_utility.h"
 using namespace std;
 
 namespace sss {
@@ -169,10 +169,10 @@ string SignedURL(const string& accessKey, const string& secretKey,
         accessKey + "/" + t.dateStamp + "/" + region + "/s3/aws4_request";
 
     Map parameters = {{"X-Amz-Algorithm", "AWS4-HMAC-SHA256"},
-                                      {"X-Amz-Credential", credentials},
-                                      {"X-Amz-Date", t.timeStamp},
-                                      {"X-Amz-Expires", to_string(expiration)},
-                                      {"X-Amz-SignedHeaders", "host"}};
+                      {"X-Amz-Credential", credentials},
+                      {"X-Amz-Date", t.timeStamp},
+                      {"X-Amz-Expires", to_string(expiration)},
+                      {"X-Amz-SignedHeaders", "host"}};
 
     if (!params.empty()) {
         parameters.insert(begin(params), end(params));
@@ -230,16 +230,15 @@ string SignedURL(const string& accessKey, const string& secretKey,
 // Sign HTTP headers: return dictionary with {key, value} pairs containing
 // per-header information.
 // TODO: replace argumentd with structure.
-Map SignHeaders(const string& accessKey,
-                                const string& secretKey, const string& endpoint,
-                                const string& method, const string& bucketName,
-                                const string& keyName, string payloadHash,
-                                const Map& parameters,
-                                const Map& additionalHeaders,
-                                const string& region, const string& service) {
-    //do not want to waste time converting to lowercase
-    for(auto kv: additionalHeaders) {
-        if(kv.first != ToLower(kv.first)) {
+Map SignHeaders(const string& accessKey, const string& secretKey,
+                const string& endpoint, const string& method,
+                const string& bucketName, const string& keyName,
+                string payloadHash, const Map& parameters,
+                const Map& additionalHeaders, const string& region,
+                const string& service) {
+    // do not want to waste time converting to lowercase
+    for (auto kv : additionalHeaders) {
+        if (kv.first != ToLower(kv.first)) {
             throw invalid_argument("Header keys must be lowecase");
         }
     }
@@ -264,10 +263,9 @@ Map SignHeaders(const string& accessKey,
 
     const string canonicalQueryString = reqParameters;
 
-    const Map defaultHeaders = {
-        {"host", host},
-        {"x-amz-content-sha256", payloadHash},
-        {"x-amz-date", t.timeStamp}};
+    const Map defaultHeaders = {{"host", host},
+                                {"x-amz-content-sha256", payloadHash},
+                                {"x-amz-date", t.timeStamp}};
 
     Map allHeaders = defaultHeaders;
     Map xAmzHeaders;
@@ -282,14 +280,14 @@ Map SignHeaders(const string& accessKey,
     for (auto kv : allHeaders) {
         sortedAllHeadersKeys.insert(kv.first);
     }
-    
+
     Map signedHeaders = defaultHeaders;
     signedHeaders.insert(begin(xAmzHeaders), end(xAmzHeaders));
     set<string> sortedSignedHeadersKeys;
     for (auto kv : signedHeaders) {
         sortedSignedHeadersKeys.insert(kv.first);
     }
-    
+
     ostringstream os;
     for (auto k : sortedAllHeadersKeys) {
         os << k << ":" << allHeaders[k] << '\n';
@@ -301,7 +299,7 @@ Map SignHeaders(const string& accessKey,
         os << k << ';';
     }
     string signedHeadersStr = os.str();
-    //remove last ';'
+    // remove last ';'
     signedHeadersStr = signedHeadersStr.substr(0, signedHeadersStr.size() - 1);
 
     // canonical request
@@ -335,4 +333,4 @@ Map SignHeaders(const string& accessKey,
     return allHeaders;
 }
 
-} // namespace sss 
+}  // namespace sss

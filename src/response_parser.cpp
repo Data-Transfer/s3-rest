@@ -50,7 +50,7 @@ std::string HTTPHeader(const std::string& headers, const std::string& header) {
     if (!regex_search(headers, sm, rx)) {
         return "";
     }
-    return sm[1];//vector<uint8_t> h = req.GetHeader();
+    return sm[1];//vector<uint8_t> h = req.GetResponseHeader();
             //string hs(begin(h), end(h));
 }
 

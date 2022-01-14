@@ -44,7 +44,7 @@
 #include <functional>
 
 /**
- * \ingroup internal
+ * \addtogroup internal
  * @{
  */
 

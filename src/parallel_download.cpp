@@ -102,7 +102,7 @@ size_t ObjectSize(const Args& args, const string& path) {
     Headers headers(begin(signedHeaders), end(signedHeaders));
     WebClient req(args.endpoint, path, "HEAD", {}, headers);
     req.Send();
-    const vector<uint8_t> h = req.GetHeader();
+    const vector<uint8_t> h = req.GetResponseHeader();
     const string hs(begin(h), end(h));
     const string cl = HTTPHeader(hs, "[Cc]ontent-[Ll]ength");
     char* ns;

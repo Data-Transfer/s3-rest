@@ -157,4 +157,22 @@ Map ParseHeaders(const string& s) {
     }
     return params;
 }
+
+/// Adds \c x-amz-meta- prefix to map keys and checks that total size is less
+/// than maximum metadata header size (currently 2kB).
+Map ToMeta(const Map& metadata) {
+    const size_t MAX_META_SIZE = 2048;
+    Map meta;
+    const string prefix = "x-amz-meta-";
+    size_t size = 0;
+    for(auto kv: metadata) {
+        auto key = prefix + kv.first;
+        meta[key] = kv.second;
+        size += key.size() + kv.second.size() + 1; // +1 --> ":"
+    }
+    if(size > MAX_META_SIZE) throw std::domain_error(
+        "Size of metadata bigger than " + to_string(MAX_META_SIZE) + " bytes");
+    return meta;
+}
+
 } // namespace sss

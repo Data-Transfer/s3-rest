@@ -155,6 +155,10 @@ Map ParseParams(std::string s);
 /// See \c https://www.w3.org/Protocols/rfc2616/rfc2616.html
 Map ParseHeaders(const std::string& s);
 
+/// Adds \c x-amz-meta- prefix to map keys and checks that total size is less
+/// than maximum metadata header size (currently 2kB).
+Map ToMeta(const Map& metadata);
+
 }  // namespace sss
 
 /**

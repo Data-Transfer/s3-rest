@@ -33,7 +33,6 @@
 
 // Parallel file upload to S3 servers
 
-#include <aws_sign.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -41,12 +40,15 @@
 #include <chrono>
 #include <future>
 #include <iostream>
+#include <fstream>
 #include <regex>
 #include <set>
 #include <stdexcept>
 #include <vector>
 #include <chrono>
 
+
+#include "aws_sign.h"
 #include "lyra/lyra.hpp"
 #include "response_parser.h"
 #include "utility.h"
@@ -312,7 +314,7 @@ int main(int argc, char const* argv[]) {
                 throw runtime_error("Error sending begin upload request - " +
                                     errcode);
             }
-            vector<uint8_t> resp = req.GetResponse();
+            vector<uint8_t> resp = req.GetResponseBody();
             const string xml(begin(resp), end(resp));
             const string uploadId = XMLTag(xml, "[Uu]pload[Ii][dD]");
             vector<future<string>> etags(config.jobs);
