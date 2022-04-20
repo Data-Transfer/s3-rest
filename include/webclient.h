@@ -128,7 +128,7 @@ class WebClient {
     bool Send();
     /// Set SSL verification options: peer and/or host
     /// It is useful to disable everything when sending https requests through 
-    /// e.g. httos tunnel
+    /// e.g. https tunnel
     bool SSLVerify(bool verifyPeer, bool verifyHost = true);
     /// Set full URL
     bool SetUrl(const std::string& url);
